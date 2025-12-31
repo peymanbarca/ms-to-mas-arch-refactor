@@ -1,0 +1,78 @@
+# procurement.py
+import os
+import logging
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional
+from motor.motor_asyncio import AsyncIOMotorClient
+import httpx
+import uuid
+
+logger = logging.getLogger("procurement")
+logging.basicConfig(level=logging.INFO)
+
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
+MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
+SUPPLIER_URL = os.getenv("SUPPLIER_URL", "http://localhost:9010/supplier/order")
+PORT = int(os.getenv("PORT", 8004))
+
+app = FastAPI(title="Procurement Service")
+
+db_client = None
+db = None
+http_client: httpx.AsyncClient = None
+
+class SupplierOrderRequest(BaseModel):
+    product_id: str
+    qty: int = Field(..., gt=0)
+    preferred_supplier: Optional[str] = None
+
+class SupplierOrderResponse(BaseModel):
+    supplier_order_id: str
+    status: str
+    eta_days: Optional[int]
+
+@app.on_event("startup")
+async def startup():
+    global db_client, db, http_client
+    db_client = AsyncIOMotorClient(MONGO_URI)
+    db = db_client[MONGO_DB]
+    await db.proc_orders.create_index("supplier_order_id", unique=True)
+    http_client = httpx.AsyncClient(timeout=10.0)
+    logger.info("Procurement connected to mongo")
+
+@app.on_event("shutdown")
+async def shutdown():
+    global db_client, http_client
+    if http_client:
+        await http_client.aclose()
+    if db_client:
+        db_client.close()
+
+@app.post("/order_supplier", response_model=SupplierOrderResponse)
+async def order_from_supplier(req: SupplierOrderRequest):
+    payload = {"sku": req.product_id, "quantity": req.qty}
+    if req.preferred_supplier:
+        payload["supplier"] = req.preferred_supplier
+    try:
+        r = await http_client.post(SUPPLIER_URL, json=payload)
+        r.raise_for_status()
+        jr = r.json()
+        order_id = jr.get("supplier_order_id", str(uuid.uuid4()))
+        doc = {
+            "supplier_order_id": order_id,
+            "product_id": req.product_id,
+            "qty": req.qty,
+            "status": jr.get("status", "PLACED"),
+            "eta_days": jr.get("eta_days"),
+            "raw_response": jr
+        }
+        await db.proc_orders.insert_one(doc)
+        return SupplierOrderResponse(supplier_order_id=order_id, status=doc["status"], eta_days=doc["eta_days"])
+    except httpx.RequestError:
+        logger.exception("supplier call failed")
+        # store a failed entry
+        order_id = str(uuid.uuid4())
+        doc = {"supplier_order_id": order_id, "product_id": req.product_id, "qty": req.qty, "status": "FAILED"}
+        await db.proc_orders.insert_one(doc)
+        raise HTTPException(status_code=502, detail="Supplier unavailable")
