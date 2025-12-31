@@ -1,6 +1,8 @@
 # procurement.py
 import os
 import logging
+import time
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -14,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 SUPPLIER_URL = os.getenv("SUPPLIER_URL", "http://localhost:9010/supplier/order")
-PORT = int(os.getenv("PORT", 8004))
+PORT = int(os.getenv("PORT", 8009))
 
 app = FastAPI(title="Procurement Service")
 
@@ -23,7 +25,7 @@ db = None
 http_client: httpx.AsyncClient = None
 
 class SupplierOrderRequest(BaseModel):
-    product_id: str
+    sku: str
     qty: int = Field(..., gt=0)
     preferred_supplier: Optional[str] = None
 
@@ -49,26 +51,30 @@ async def shutdown():
     if db_client:
         db_client.close()
 
+
 @app.post("/order_supplier", response_model=SupplierOrderResponse)
 async def order_from_supplier(req: SupplierOrderRequest):
-    payload = {"sku": req.product_id, "quantity": req.qty}
+    payload = {"sku": req.sku, "qty": req.qty}
     if req.preferred_supplier:
         payload["supplier"] = req.preferred_supplier
     try:
-        r = await http_client.post(SUPPLIER_URL, json=payload)
-        r.raise_for_status()
-        jr = r.json()
-        order_id = jr.get("supplier_order_id", str(uuid.uuid4()))
+        # simulate order from external supplier service
+        time.sleep(0.2)
+        # r = await http_client.post(SUPPLIER_URL, json=payload)
+        # r.raise_for_status()
+        # jr = r.json()
+        # supplier_order_id = jr.get("supplier_order_id", str(uuid.uuid4()))
+        supplier_order_id = str(uuid.uuid4())
+
         doc = {
-            "supplier_order_id": order_id,
-            "product_id": req.product_id,
+            "supplier_order_id": supplier_order_id,
+            "sku": req.sku,
             "qty": req.qty,
-            "status": jr.get("status", "PLACED"),
-            "eta_days": jr.get("eta_days"),
-            "raw_response": jr
+            "status": "PLACED",
+            "eta_days": 2
         }
         await db.proc_orders.insert_one(doc)
-        return SupplierOrderResponse(supplier_order_id=order_id, status=doc["status"], eta_days=doc["eta_days"])
+        return SupplierOrderResponse(supplier_order_id=supplier_order_id, status=doc["status"], eta_days=doc["eta_days"])
     except httpx.RequestError:
         logger.exception("supplier call failed")
         # store a failed entry

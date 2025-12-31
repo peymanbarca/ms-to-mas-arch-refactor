@@ -5,10 +5,13 @@ from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import PyMongoError
 import time
 import threading
+import requests
 
 app = FastAPI()
 db_client = MongoClient("mongodb://user:pass1@localhost:27017/")
 inventory_col = db_client["ms_baseline"]["inventory"]
+PROCUREMENT_SERVICE_URL = "http://127.0.0.1:8009/order_supplier"
+
 lock = threading.Lock()
 
 
@@ -78,7 +81,7 @@ def reserve_stock(req: ReservationReq):
     inject_failure(req)
 
     # ============================
-    # ATOMIC PATH (Transaction)
+    # ATOMIC PATH (With Lock)
     # ============================
     if req.atomic_update:
         try:
@@ -107,14 +110,14 @@ def reserve_stock(req: ReservationReq):
 
             return {
                 "order_id": req.order_id,
-                "status": "reserved",
+                "status": "RESERVED",
                 "items": results
             }
 
         except Exception as e:
             return {
                 "order_id": req.order_id,
-                "status": "out_of_stock",
+                "status": "OUT_OF_STOCK",
                 "reason": str(e)
             }
 
@@ -129,7 +132,7 @@ def reserve_stock(req: ReservationReq):
             if not doc or doc["stock"] < item.qty:
                 return {
                     "order_id": req.order_id,
-                    "status": "out_of_stock",
+                    "status": "OUT_OF_STOCK",
                     "failed_sku": item.sku
                 }
 
@@ -146,6 +149,90 @@ def reserve_stock(req: ReservationReq):
 
         return {
             "order_id": req.order_id,
-            "status": "reserved",
+            "status": "RESERVED",
             "items": updated
         }
+
+
+@app.post("/reserve-rollback")
+def rollback_reserve_stock(req: ReservationReq):
+    if not req.items:
+        raise HTTPException(status_code=400, detail="empty_cart_items")
+
+    # ============================
+    # ATOMIC PATH (With Lock)
+    # ============================
+    if req.atomic_update:
+        try:
+            with lock:
+                results = []
+
+                # Step 1: increment all
+                for item in req.items:
+                    res = inventory_col.find_one_and_update(
+                        {"sku": item.sku},
+                        {"$inc": {"stock": +item.qty}},
+                        return_document=ReturnDocument.AFTER
+                    )
+                    results.append({
+                        "sku": item.sku,
+                        "remaining": res["stock"]
+                    })
+
+            return {
+                "order_id": req.order_id,
+                "status": "RESERVED_ROLLBACK",
+                "items": results
+            }
+
+        except Exception as e:
+            return {
+                "order_id": req.order_id,
+                "status": "FAILED",
+                "reason": str(e)
+            }
+
+    # ============================
+    # NON-ATOMIC PATH (Stepwise)
+    # ============================
+    else:
+        updated = []
+
+        for item in req.items:
+            doc = inventory_col.find_one({"sku": item.sku})
+            if not doc:
+                return {
+                    "order_id": req.order_id,
+                    "status": "FAILED",
+                    "failed_sku": item.sku
+                }
+
+            new_stock = doc["stock"] + item.qty
+            inventory_col.update_one(
+                {"sku": item.sku},
+                {"$set": {"stock": new_stock}}
+            )
+
+            updated.append({
+                "sku": item.sku,
+                "remaining": new_stock
+            })
+
+        return {
+            "order_id": req.order_id,
+            "status": "RESERVED_ROLLBACK",
+            "items": updated
+        }
+
+
+@app.post("/reorder")
+def reorder_inventory():
+    # some rules for reordering ...
+    dynamic_value = 2
+    dynamic_reorder_value = 10
+    low_stock_items_cur = inventory_col.find({'stock': {'$lt': dynamic_value}})
+    for item in low_stock_items_cur:
+        try:
+            res = requests.post(PROCUREMENT_SERVICE_URL, json={'sku': item['sku'], 'qty': dynamic_reorder_value})
+        except Exception as e:
+            pass
