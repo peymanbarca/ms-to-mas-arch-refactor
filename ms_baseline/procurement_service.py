@@ -71,7 +71,8 @@ async def order_from_supplier(req: SupplierOrderRequest):
             "sku": req.sku,
             "qty": req.qty,
             "status": "PLACED",
-            "eta_days": 2
+            "eta_days": 2,
+            "created_at": datetime.datetime.utcnow()
         }
         await db.proc_orders.insert_one(doc)
         return SupplierOrderResponse(supplier_order_id=supplier_order_id, status=doc["status"], eta_days=doc["eta_days"])

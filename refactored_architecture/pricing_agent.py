@@ -20,7 +20,7 @@ PORT = int(os.getenv("PORT", 8002))
 
 llm = Ollama(model="qwen2", temperature=0.0)
 
-app = FastAPI(title="Pricing & Promotion Service")
+app = FastAPI(title="Pricing & Promotion Agent")
 
 # DB client will be set on startup
 db_client: Optional[AsyncIOMotorClient] = None
