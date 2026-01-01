@@ -56,7 +56,7 @@ async def shutdown():
 
 
 @app.post("/clear_bookings")
-def clear_orders():
+def clear_bookings():
     db.shipments.delete_many({})
 
 

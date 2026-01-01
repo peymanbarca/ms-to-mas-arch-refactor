@@ -25,7 +25,7 @@ class PaymentResponse(BaseModel):
 
 
 @app.post("/clear_payments")
-def clear_orders():
+def clear_payments():
     PAYMENT_COLL.delete_many({})
 
 
