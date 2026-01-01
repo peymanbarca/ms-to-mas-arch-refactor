@@ -24,6 +24,11 @@ class PaymentResponse(BaseModel):
     status: Literal["SUCCESS", "FAILED"]
 
 
+@app.post("/clear_payments")
+def clear_orders():
+    PAYMENT_COLL.delete_many({})
+
+
 @app.post("/pay-order", response_model=PaymentResponse, summary="Process payment for an order")
 def process_payment(request: PaymentRequest):
     """
@@ -32,8 +37,9 @@ def process_payment(request: PaymentRequest):
     """
     time.sleep(0.3)
 
-    success = random.choices([True, False], weights=[3, 1])[0]  # 75% success
-    status = "SUCCESS" if success else "FAILED"
+    # success = random.choices([True, False], weights=[3, 1])[0]  # 75% success
+    # status = "SUCCESS" if success else "FAILED"
+    status = "SUCCESS"
 
     PAYMENT_COLL.insert_one({'order_id': request.order_id, 'final_price': request.final_price, 'status': status})
     return PaymentResponse(order_id=request.order_id, status=status)

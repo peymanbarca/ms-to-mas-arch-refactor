@@ -55,6 +55,11 @@ async def shutdown():
         db_client.close()
 
 
+@app.post("/clear_bookings")
+def clear_orders():
+    db.shipments.delete_many({})
+
+
 @app.post("/book", response_model=ShipmentResponse)
 async def book_shipment(req: ShipmentRequest):
     try:
