@@ -6,6 +6,7 @@ from pymongo.errors import PyMongoError
 import time
 import threading
 import requests
+import logging
 
 app = FastAPI()
 db_client = MongoClient("mongodb://user:pass1@localhost:27017/")
@@ -13,6 +14,13 @@ inventory_col = db_client["ms_baseline"]["inventory"]
 PROCUREMENT_SERVICE_URL = "http://127.0.0.1:8009/order_supplier"
 
 lock = threading.Lock()
+
+logger = logging.getLogger("inventory")
+logging.basicConfig(
+    filename='ms_baseline/logs/inventory_service.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 
 class CartItem(BaseModel):
@@ -234,5 +242,6 @@ def reorder_inventory():
     for item in low_stock_items_cur:
         try:
             res = requests.post(PROCUREMENT_SERVICE_URL, json={'sku': item['sku'], 'qty': dynamic_reorder_value})
+            res.raise_for_status()
         except Exception as e:
-            pass
+            logger.exception(f"Error occurred in calling procurement service for reorder inventory: {e}")
