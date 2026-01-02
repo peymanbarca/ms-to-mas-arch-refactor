@@ -11,7 +11,7 @@ from langgraph.graph import StateGraph, END
 import asyncio
 
 
-logger = logging.getLogger("pricing")
+logger = logging.getLogger("pricing_agent")
 logging.basicConfig(level=logging.INFO)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
@@ -103,11 +103,6 @@ def parse_json_response(text: str):
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if m:
             return json.loads(m.group(0))
-        t = text.strip().lower()
-        if t in ("reserved", "yes"):
-            return {"status": "reserved"}
-        if t in ("out_of_stock", "no"):
-            return {"status": "out_of_stock"}
         return None
     except Exception as e:
         logging.error(f"parse error: {e} -- {text}")
