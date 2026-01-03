@@ -25,7 +25,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8001))
 
-llm = Ollama(model="qwen2", temperature=0.0)
+llm = Ollama(model="tinyllama", temperature=0.0)
 
 app = FastAPI(title="Inventory Agent")
 
