@@ -8,12 +8,17 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
 import uuid
 
-logger = logging.getLogger("shopping_cart")
-logging.basicConfig(level=logging.INFO)
-
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8003))
+
+
+logger = logging.getLogger("shopping_cart")
+logging.basicConfig(
+    filename='logs/shopping_cart_service.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 app = FastAPI(title="Shopping Cart Service")
 
@@ -54,10 +59,14 @@ async def create_cart():
 
 @app.get("/cart/{cart_id}", response_model=Cart)
 async def get_cart(cart_id: str):
+    logger.info(f"Request for get_cart, cart_id: {cart_id}")
     doc = await db.carts.find_one({"cart_id": cart_id})
     if not doc:
+        logger.exception(f"Request for get_cart, not found cart_id: {cart_id}")
         raise HTTPException(status_code=404, detail="cart not found")
-    return Cart(cart_id=doc["cart_id"], items=doc.get("items", []))
+    result = Cart(cart_id=doc["cart_id"], items=doc.get("items", []))
+    logger.info(f"Request for get_cart, cart_id: {cart_id}, result: {result}")
+    return result
 
 @app.post("/cart/{cart_id}/items", response_model=Cart)
 async def add_item(cart_id: str, item: CartItem):

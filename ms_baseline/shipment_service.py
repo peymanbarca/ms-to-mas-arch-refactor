@@ -11,13 +11,18 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
 import uuid
 
-logger = logging.getLogger("shipment")
-logging.basicConfig(level=logging.INFO)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 CARRIER_API = os.getenv("CARRIER_API", "http://localhost:9020/carrier/book")
 PORT = int(os.getenv("PORT", 8006))
+
+logger = logging.getLogger("shipment")
+logging.basicConfig(
+    filename='logs/shipment_service.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 app = FastAPI(title="Shipment Service")
 
@@ -62,12 +67,17 @@ def clear_bookings():
 
 @app.post("/book", response_model=ShipmentResponse)
 async def book_shipment(req: ShipmentRequest):
+    logger.info(f"Request for book_shipment, order_id={req.order_id}, request: {req}")
+
     try:
         # simulate calling an external service
         # r = await http_client.post(CARRIER_API, json=payload)
         # r.raise_for_status()
         # jr = r.json()
         time.sleep(0.2)
+        logger.info(f"Request for book_shipment, external carrier service called successfully, order_id={req.order_id},"
+                    f" request: {req}")
+
         tracking_id = str(uuid.uuid4())
 
         shipment_id = str(uuid.uuid4())
@@ -79,7 +89,11 @@ async def book_shipment(req: ShipmentRequest):
             "tracking_id": tracking_id
         }
         await db.shipments.insert_one(doc)
-        return ShipmentResponse(shipment_id=shipment_id, tracking_id=doc["tracking_id"])
+        result = ShipmentResponse(shipment_id=shipment_id, tracking_id=doc["tracking_id"])
+        logger.info(f"Request for book_shipment successfully processed, request: {req}, order_id={req.order_id},"
+                    f" result: {result}")
+
+        return result
     except httpx.RequestError:
-        logger.exception("carrier booking failed")
+        logger.exception(f"External carrier booking failed, order_id={req.order_id}")
         raise HTTPException(status_code=502, detail="Carrier unavailable")

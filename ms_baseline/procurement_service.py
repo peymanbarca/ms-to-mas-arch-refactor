@@ -9,9 +9,8 @@ from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
 import uuid
+import datetime
 
-logger = logging.getLogger("procurement")
-logging.basicConfig(level=logging.INFO)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
@@ -23,6 +22,13 @@ app = FastAPI(title="Procurement Service")
 db_client = None
 db = None
 http_client: httpx.AsyncClient = None
+
+logger = logging.getLogger("procurement")
+logging.basicConfig(
+    filename='logs/procurement_service.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 class SupplierOrderRequest(BaseModel):
     sku: str
@@ -54,6 +60,8 @@ async def shutdown():
 
 @app.post("/order_supplier", response_model=SupplierOrderResponse)
 async def order_from_supplier(req: SupplierOrderRequest):
+    logger.info(f"Request for order_from_supplier external, request: {req}")
+
     payload = {"sku": req.sku, "qty": req.qty}
     if req.preferred_supplier:
         payload["supplier"] = req.preferred_supplier
@@ -75,9 +83,12 @@ async def order_from_supplier(req: SupplierOrderRequest):
             "created_at": datetime.datetime.utcnow()
         }
         await db.proc_orders.insert_one(doc)
-        return SupplierOrderResponse(supplier_order_id=supplier_order_id, status=doc["status"], eta_days=doc["eta_days"])
+        result = SupplierOrderResponse(supplier_order_id=supplier_order_id, status=doc["status"], eta_days=doc["eta_days"])
+        logger.info(f"Request for order_from_supplier successfully processed, result: {result}, request: {req}")
+
+        return result
     except httpx.RequestError:
-        logger.exception("supplier call failed")
+        logger.exception("External supplier call failed")
         # store a failed entry
         order_id = str(uuid.uuid4())
         doc = {"supplier_order_id": order_id, "product_id": req.product_id, "qty": req.qty, "status": "FAILED"}

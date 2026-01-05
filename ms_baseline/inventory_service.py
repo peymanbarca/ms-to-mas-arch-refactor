@@ -17,7 +17,7 @@ lock = threading.Lock()
 
 logger = logging.getLogger("inventory")
 logging.basicConfig(
-    filename='ms_baseline/logs/inventory_service.log',
+    filename='logs/inventory_service.log',
     level=logging.INFO,  # Log all messages with severity DEBUG or higher
     format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
 )
@@ -69,6 +69,9 @@ def inject_failure(req: ReservationReq):
     if req.drop and req.drop > 0:
         INJECT_DROP_RATE = req.drop
 
+    logger.info(f"Failure injected for inventory reserve_stock INJECT_DELAY: {INJECT_DELAY}, "
+                f"INJECT_DROP_RATE: {INJECT_DROP_RATE}")
+
     # inject delay
     if INJECT_DELAY > 0:
         time.sleep(INJECT_DELAY)
@@ -85,6 +88,7 @@ def reserve_stock(req: ReservationReq):
     if not req.items:
         raise HTTPException(status_code=400, detail="empty_cart_items")
 
+    logger.info(f"Request for reserve_stock, order_id: {req.order_id}, request: {req}")
     # optional drop injection: simulate network failure by returning 500 occasionally
     inject_failure(req)
 
@@ -102,6 +106,9 @@ def reserve_stock(req: ReservationReq):
                         {"sku": item.sku}
                     )
                     if not doc or doc["stock"] < item.qty:
+                        logger.info(
+                            f"Request for reserve_stock successfully processed, order_id: {req.order_id},"
+                            f" failed_sku: {item.sku}, status: OUT_OF_STOCK")
                         raise ValueError(f"Out of stock: {item.sku}")
 
                 # Step 2: decrement all
@@ -116,6 +123,9 @@ def reserve_stock(req: ReservationReq):
                         "remaining": res["stock"]
                     })
 
+            logger.info(f"Request for reserve_stock successfully processed, order_id: {req.order_id},"
+                        f" result items: {results}, status: RESERVED")
+
             return {
                 "order_id": req.order_id,
                 "status": "RESERVED",
@@ -123,6 +133,9 @@ def reserve_stock(req: ReservationReq):
             }
 
         except Exception as e:
+            logger.error(
+                f"Exception in Request for reserve_stock, order_id: {req.order_id},"
+                f" status: OUT_OF_STOCK, Error: {str(e)}")
             return {
                 "order_id": req.order_id,
                 "status": "OUT_OF_STOCK",
@@ -138,6 +151,9 @@ def reserve_stock(req: ReservationReq):
         for item in req.items:
             doc = inventory_col.find_one({"sku": item.sku})
             if not doc or doc["stock"] < item.qty:
+                logger.info(
+                    f"Request for reserve_stock successfully processed, order_id: {req.order_id},"
+                    f" failed_sku: {item.sku}, status: OUT_OF_STOCK")
                 return {
                     "order_id": req.order_id,
                     "status": "OUT_OF_STOCK",
@@ -154,6 +170,9 @@ def reserve_stock(req: ReservationReq):
                 "sku": item.sku,
                 "remaining": new_stock
             })
+
+        logger.info(f"Request for reserve_stock successfully processed, order_id: {req.order_id},"
+                    f" result items: {updated}, status: RESERVED")
 
         return {
             "order_id": req.order_id,

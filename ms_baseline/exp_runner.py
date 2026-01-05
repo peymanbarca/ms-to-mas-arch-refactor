@@ -19,14 +19,18 @@ total_runs = 1
 
 DELAY = float(os.environ.get("DELAY", "0"))             # seconds to sleep inside inventory agent
 DROP_RATE = int(os.environ.get("DROP_RATE", "0"))       # percent 0-100
-atomic_update = True
+atomic_update = False
 
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb://user:pass1@localhost:27017/")
 DB_NAME = os.environ.get("DB_NAME", "ms_baseline")
 
 
-with open(file='logs/order_service.log', mode='w') as f:
-    f.write('')
+logs = ['logs/order_service.log', 'logs/inventory_service.log', 'logs/payment_service.log', 'logs/pricing_service.log',
+        'logs/procurement_service.log', 'logs/product_search_service.log', 'logs/shipment_service.log',
+        'logs/shopping_cart_service.log']
+for log in logs:
+    with open(file=log, mode='w') as f:
+        f.write('')
 
 
 def real_db():
@@ -38,6 +42,10 @@ def real_db():
 def run_trial(trial_id: int, delay: float, drop_rate: int):
     try:
         start = time.time()
+        # product search
+        # add cart
+
+        # main workflow for purchase cart
         resp = requests.post(ORDER_SERVICE_URL.replace('cart_id', '5811237b-d180-44e0-b042-29ddd5fa3e4f'), timeout=30)
         elapsed = time.time() - start
         if resp.status_code == 200:

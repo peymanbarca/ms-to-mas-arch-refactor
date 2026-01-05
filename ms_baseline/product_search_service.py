@@ -7,13 +7,17 @@ from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
 
-logger = logging.getLogger("product_search")
-logging.basicConfig(level=logging.INFO)
-
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:8002")
 PORT = int(os.getenv("PORT", 8008))
+
+logger = logging.getLogger("product_search")
+logging.basicConfig(
+    filename='logs/product_search_service.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 app = FastAPI(title="Product Search Service")
 
@@ -72,6 +76,8 @@ def create_product(p: ProductCreate):
 
 @app.get("/search", response_model=ProductSearchResponse)
 async def search_products(q: str = Query(..., example="noise cancelling headphones"), limit: int = 5):
+    logger.info(f"Request for search_products, query: {q}")
+
     # Simple text search (in real systems use full-text or embeddings + vector DB)
     cursor = db.products.find({"$text": {"$search": q}}, {"score": {"$meta": "textScore"}}).sort([("score", {"$meta": "textScore"})]).limit(limit)
     docs = await cursor.to_list(length=limit)
@@ -84,13 +90,17 @@ async def search_products(q: str = Query(..., example="noise cancelling headphon
     payload = {"items": [{"product_id": pid, "qty": 1} for pid in product_ids], "promo_codes": []}
     prices = {}
     try:
+        logger.info(f"Calling pricing_service, req: {payload}")
+
         resp = await http_client.post(f"{PRICING_SERVICE_URL}/price", json=payload, timeout=10)
         resp.raise_for_status()
         jr = resp.json()
+        logger.info(f"Called pricing_service, req: {payload}, response: {jr}")
+
         for it in jr.get("items", []):
             prices[it["product_id"]] = it["unit_price"]
     except Exception as e:
-        logger.exception("pricing call failed: %s", e)
+        logger.exception("pricing call failed in request for search_products: %s", e)
         # fallback: attempt to read price from product doc if present
         for d in docs:
             prices.setdefault(d["sku"], d.get("price", 0.0))
@@ -100,5 +110,9 @@ async def search_products(q: str = Query(..., example="noise cancelling headphon
         price = prices.get(d["sku"], 0.0)
         # compute a naive score if text score not available
         score = d.get("score", 1.0)
-        results.append(ProductSearchResultItem(sku=d["sku"], name=d["name"], description=d.get("description",""), price=price, score=float(score)))
-    return ProductSearchResponse(query=q, results=results)
+        results.append(ProductSearchResultItem(sku=d["sku"], name=d["name"], description=d.get("description",""),
+                                               price=price, score=float(score)))
+    final_result = ProductSearchResponse(query=q, results=results)
+    logger.info(f"Request for search_products successfully processed, query: {q}, result: {final_result}")
+
+    return final_result
