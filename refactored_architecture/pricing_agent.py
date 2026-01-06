@@ -6,7 +6,7 @@ from typing import TypedDict, List, Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from httpx import AsyncClient
 import json
-from langchain_community.llms import Ollama
+from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 import asyncio
 
@@ -22,7 +22,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8002))
 
-llm = Ollama(model="qwen2", temperature=0.0)
+llm = ChatOllama(model="qwen2", temperature=0.0)
 
 app = FastAPI(title="Pricing & Promotion Agent")
 
@@ -123,9 +123,14 @@ async def pricing_reasoning(state: PricingState) -> PricingState:
     prompt = f"""
     You are a pricing agent in a retail supply chain.
     
-    You MUST compute prices using the unit prices provided.
-    Apply promotions if applicable.
-    Return ONLY valid JSON in the following schema:
+    - Tasks:
+    You MUST compute prices using the unit prices provided, and return response as JSON.
+    Apply promotions if applicable (Only apply if promo_codes in REQUEST is not empty):
+        - PROMO10 → 10% off line total
+        - BUYS2SAVE5 → $5 off if qty >= 2
+    
+    
+    - Return ONLY valid JSON in the following schema:
     
     {{
       "items": [
@@ -147,23 +152,30 @@ async def pricing_reasoning(state: PricingState) -> PricingState:
     REQUEST = {json.dumps(state["request"])}
     PRICE_MAP = {json.dumps(state["price_map"])}
     
-    Promotion semantics, Only apply if promo_codes in REQUEST is not empty:
-    - PROMO10 → 10% off line total
-    - BUYS2SAVE5 → $5 off if qty >= 2
     """
 
     # LangChain Ollama is synchronous → offload
     logger.info(f'LLM Call Prompt: {prompt}')
-    raw = await asyncio.to_thread(llm.invoke, prompt)
-    logger.info(f'LLM Raw response: {raw}')
-    print(f'LLM Raw response: {raw}')
+    response = await asyncio.to_thread(llm.invoke, prompt)
+
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'LLM Raw response: {raw_response}')
+    print(f'LLM Raw response: {raw_response}')
+
+    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
 
     try:
-        parsed = parse_json_response(raw)
+        parsed = parse_json_response(raw_response)
     except Exception as e:
-        logger.info(f'Invalid JSON from pricing agent: {raw}, {e}')
-        print(f'Invalid JSON from pricing agent: {raw}, {e}')
-        raise ValueError(f"Invalid JSON from pricing agent: {raw}") from e
+        logger.info(f'Invalid JSON from pricing agent: {raw_response}, {e}')
+        print(f'Invalid JSON from pricing agent: {raw_response}, {e}')
+        raise ValueError(f"Invalid JSON from pricing agent: {raw_response}") from e
 
     state["result"] = parsed
     return state

@@ -11,7 +11,7 @@ from typing import TypedDict, List, Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from httpx import AsyncClient
 import json
-from langchain_community.llms import Ollama
+from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 import asyncio
 
@@ -19,11 +19,11 @@ import asyncio
 logger = logging.getLogger("procurement_agent")
 logging.basicConfig(level=logging.INFO)
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8009))
 
-llm = Ollama(model="qwen2", temperature=0.0)
+llm = ChatOllama(model="qwen2", temperature=0.0)
 
 app = FastAPI(title="Procurement Agent")
 
@@ -121,13 +121,24 @@ async def procurement_reasoning(state: ProcurementState) -> ProcurementState:
     """
 
     # LangChain Ollama is synchronous → offload
-    raw = await asyncio.to_thread(llm.invoke, prompt)
-    print(f'RAW LLM Response: {raw}')
+    response = await asyncio.to_thread(llm.invoke, prompt)
+
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'LLM Raw response: {raw_response}')
+    print(f'LLM Raw response: {raw_response}')
+
+    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
 
     try:
-        parsed = parse_json_response(raw)
+        parsed = parse_json_response(raw_response)
     except Exception as e:
-        raise ValueError(f"Invalid JSON from procurement agent: {raw}") from e
+        raise ValueError(f"Invalid JSON from procurement agent: {raw_response}") from e
 
     state["result"] = parsed
     return state

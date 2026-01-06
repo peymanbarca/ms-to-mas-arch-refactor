@@ -25,7 +25,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
 )
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8000))
 
@@ -36,7 +36,7 @@ PRICING_SERVICE_URL = "http://127.0.0.1:8002"
 PAYMENT_SERVICE_URL = "http://127.0.0.1:8007/pay-order"
 SHIPMENT_SERVICE_URL = "http://127.0.0.1:8006/book"
 
-llm = Ollama(model="qwen2", temperature=0.0)
+llm = Ollama(model="llama3", temperature=0.5)
 
 app = FastAPI(title="Order Agent")
 
@@ -206,11 +206,17 @@ def reason_node(state: OrderState):
         Your goal is to complete an order workflow.
         You must decide the next action based on PREVIOUS_ACTION and CURRENT_STATUS input
 
-        Possible actions: [FETCH_CART, PRICE_CART, RESERVE_INVENTORY, PROCESS_PAYMENT, ROLLBACK_INVENTORY, 
-            BOOK_SHIPMENT, FINISH]
+        Possible actions: 
+        - FETCH_CART
+        - PRICE_CART
+        - RESERVE_INVENTORY
+        - PROCESS_PAYMENT
+        - ROLLBACK_INVENTORY
+        - BOOK_SHIPMENT
+        - FINISH
 
         Rules:
-        - if PREVIOUS_ACTION is null or None, choose next action as FETCH_CART
+        - if PREVIOUS_ACTION is null or None or empty, choose next action as FETCH_CART
         - else choose next action based on this workflow:
             FETCH_CART -> PRICE_CART -> RESERVE_INVENTORY -> PROCESS_PAYMENT -> BOOK_SHIPMENT -> FINISH
             
@@ -251,7 +257,6 @@ def fetch_cart_node(state: OrderState):
 def pricing_node(state: OrderState):
     logger.info(f'Calling pricing_node tool ... \n Current State is {state}')
     print(f'Calling pricing_node tool ... \n Current State is {state}')
-    print(type(state))
     pricing = price_cart(state)
     logger.info(f'Response of pricing_node tool ==> {pricing}, \n-------------------------------------')
     print(f'Response of pricing_node tool ==> {pricing}, \n-------------------------------------')
@@ -318,7 +323,7 @@ def shipment_node(state: OrderState):
         print(f'Response of shipment_node tool ==> {res}, \n-------------------------------------')
 
         state["shipment_status"] = "BOOKED"
-        state["status"] = "SHIPMENT_BOOKED"
+        state["status"] = "COMPLETED"
         # update order status in DB
         db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": "COMPLETED"}})
 
@@ -406,3 +411,8 @@ async def checkout_cart(cart_id: str):
     logger.info(f'Request for checkout_cart processed successfully, cart_id = {cart_id}, result={result}')
     print(f'Request for checkout_cart processed successfully, cart_id = {cart_id}, result={result}')
     return result
+
+
+@app.post("/clear_orders")
+async def clear_orders():
+    await db.orders.delete_many({})

@@ -11,7 +11,7 @@ from typing import TypedDict, List, Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from httpx import AsyncClient
 import json
-from langchain_community.llms import Ollama
+from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 import asyncio
 
@@ -23,11 +23,11 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
 )
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8006))
 
-llm = Ollama(model="qwen2", temperature=0.0)
+llm = ChatOllama(model="qwen2", temperature=0.0)
 
 app = FastAPI(title="Shipment Booking Agent")
 
@@ -103,7 +103,14 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
     Your task:
     - Confirm existence of tracking_id in CARRIER_RESULT input
     - Generate shipment_id as uuid
-    - Return ONLY response only in JSON in the schema below
+    - Return JSON response
+
+    Rules:
+    - tracking_id must come from CARRIER_RESULT input
+    - shipment_id must be newly generated as UUID
+    - if both shipment_id and tracking_id exist, success in response should be true, otherwise it should be false.
+    
+    Return ONLY JSON response in the schema below
 
     Schema:
     {{
@@ -116,23 +123,29 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
     REQUEST = {json.dumps(state["request"])}
     CARRIER_RESULT = {json.dumps(state["carrier_result"])}
 
-    Rules:
-    - tracking_id must come from CARRIER_RESULT input
-    - shipment_id must be newly generated as UUID
-    - if both shipment_id and tracking_id exist, success in response should be true, otherwise it should be false.
     """
 
     logger.info(f'LLM Call Prompt: {prompt}')
-    raw = await asyncio.to_thread(llm.invoke, prompt)
-    logger.info(f'LLM Raw response: {raw}')
-    print(f'LLM Raw response: {raw}')
+    response = await asyncio.to_thread(llm.invoke, prompt)
+
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'LLM Raw response: {raw_response}')
+    print(f'LLM Raw response: {raw_response}')
+
+    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
 
     try:
-        parsed = parse_json_response(raw)
+        parsed = parse_json_response(raw_response)
     except Exception as e:
-        logger.info(f'Invalid JSON from shipment agent: {raw}, {e}')
-        print(f'Invalid JSON from shipment agent: {raw}, {e}')
-        raise ValueError(f"Invalid JSON from shipment agent: {raw}") from e
+        logger.info(f'Invalid JSON from shipment agent: {raw_response}, {e}')
+        print(f'Invalid JSON from shipment agent: {raw_response}, {e}')
+        raise ValueError(f"Invalid JSON from shipment agent: {raw_response}") from e
 
     state["result"] = parsed
     return state
@@ -193,5 +206,5 @@ async def book_shipment(req: ShipmentRequest):
 
 
 @app.post("/clear_bookings")
-def clear_bookings():
-    db.shipments.delete_many({})
+async def clear_bookings():
+    await db.shipments.delete_many({})

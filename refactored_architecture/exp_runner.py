@@ -10,10 +10,10 @@ import statistics
 ORDER_SERVICE_URL = "http://127.0.0.1:8000/cart/cart_id/checkout"
 ITEM = "laptop"
 SKU = "4cc0770f-91bc-4c0d-a26f-7b872f02ca94"
-INIT_STOCK = 100
+INIT_STOCK = 10
 QTY = 2
 
-N_TRIALS = 100
+N_TRIALS = 10
 MAX_WORKERS = N_TRIALS / 10  # Number of concurrent threads
 total_runs = 1
 
@@ -21,7 +21,7 @@ DELAY = float(os.environ.get("DELAY", "0"))             # seconds to sleep insid
 DROP_RATE = int(os.environ.get("DROP_RATE", "0"))       # percent 0-100
 atomic_update = False
 
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://user:pass1@localhost:27017/")
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/")
 DB_NAME = os.environ.get("DB_NAME", "ms_baseline")
 
 

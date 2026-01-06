@@ -11,8 +11,9 @@ from typing import TypedDict, List, Dict, Any, Optional, Literal
 from motor.motor_asyncio import AsyncIOMotorClient
 from httpx import AsyncClient
 import json
-from langchain_community.llms import Ollama
+# from langchain_community.llms import Ollama
 from langgraph.graph import StateGraph, END
+from langchain_ollama import ChatOllama
 import asyncio
 
 
@@ -23,11 +24,11 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
 )
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8007))
 
-llm = Ollama(model="qwen2", temperature=0.0)
+llm = ChatOllama(model="qwen2", temperature=0.0)
 
 app = FastAPI(title="Payment Agent")
 
@@ -136,17 +137,27 @@ async def payment_reasoning_node(state: PaymentAgentState) -> PaymentAgentState:
     """
 
     logger.info(f'LLM Call Prompt: {prompt}')
-    raw = await asyncio.to_thread(llm.invoke, prompt)
-    logger.info(f'LLM Raw response: {raw}')
-    print(f'LLM Raw response: {raw}')
+    response = await asyncio.to_thread(llm.invoke, prompt)
+
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'LLM Raw response: {raw_response}')
+    print(f'LLM Raw response: {raw_response}')
+
+    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
 
     try:
-        decision = parse_json_response(raw)
+        decision = parse_json_response(raw_response)
         assert decision["status"] in ["SUCCESS", "FAILED"]
     except Exception as e:
-        logger.info(f'Invalid payment decision: {raw}, {e}')
-        print(f'Invalid payment decision: {raw}, {e}')
-        raise ValueError(f"Invalid payment decision: {raw}") from e
+        logger.info(f'Invalid payment decision: {raw_response}, {e}')
+        print(f'Invalid payment decision: {raw_response}, {e}')
+        raise ValueError(f"Invalid payment decision: {raw_response}") from e
 
     state["decision"] = decision
     return state
@@ -194,5 +205,5 @@ async def process_payment(req: PaymentRequest):
 
 
 @app.post("/clear_payments")
-def clear_payments():
-    db.payments.delete_many({})
+async def clear_payments():
+    await db.payments.delete_many({})

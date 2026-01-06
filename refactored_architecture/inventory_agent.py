@@ -12,8 +12,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from httpx import AsyncClient
 from pymongo import ReturnDocument
 import json
-from langchain_community.llms import Ollama
 from langgraph.graph import StateGraph, END
+from langchain_ollama import ChatOllama
 import asyncio
 import threading
 
@@ -25,11 +25,11 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
 )
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8001))
 
-llm = Ollama(model="tinyllama", temperature=0.0)
+llm = ChatOllama(model="qwen2", temperature=0.0)
 
 app = FastAPI(title="Inventory Agent")
 
@@ -43,11 +43,6 @@ lock = threading.Lock()
 class CartItem(BaseModel):
     sku: str
     qty: int = Field(1, gt=0)
-
-
-class Cart(BaseModel):
-    cart_id: str
-    items: List[CartItem] = []
 
 
 class ReservationReq(BaseModel):
@@ -211,11 +206,21 @@ async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
     """
 
     logger.info(f'LLM Call Prompt: {prompt}')
-    raw = await asyncio.to_thread(llm.invoke, prompt)
-    logger.info(f'LLM Raw response: {raw}')
-    print(f'LLM Raw response: {raw}')
+    response = await asyncio.to_thread(llm.invoke, prompt)
 
-    decision = parse_json_response(raw).get("decision", "OUT_OF_STOCK")
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'LLM Raw response: {raw_response}')
+    print(f'LLM Raw response: {raw_response}')
+
+    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+
+    decision = parse_json_response(raw_response).get("decision", "OUT_OF_STOCK")
 
     state["action"] = decision
     return state
@@ -253,7 +258,7 @@ inventory_graph = build_inventory_agent()
 
 
 @app.post("/reset_stocks")
-def reset_stocks(request: dict):
+async def reset_stocks(request: dict):
     """
 
     :param request:
@@ -267,10 +272,10 @@ def reset_stocks(request: dict):
         }
     :return:
     """
-    db.inventory.delete_many({})
+    await db.inventory.delete_many({})
     items: List[CartItem] = request["items"]
     for item in items:
-        db.inventory.insert_one({"sku": item['sku'], "stock": item['stock']})
+        await db.inventory.insert_one({"sku": item['sku'], "stock": item['stock']})
 
 
 @app.post("/reserve")
