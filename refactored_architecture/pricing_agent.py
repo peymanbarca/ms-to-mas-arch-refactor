@@ -12,7 +12,11 @@ import asyncio
 
 
 logger = logging.getLogger("pricing_agent")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    filename='logs/pricing_agent.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
@@ -78,6 +82,9 @@ async def shutdown():
 # Tool: Fetch Prices from MongoDB
 def make_fetch_prices():
     async def fetch_prices(state: PricingState) -> PricingState:
+        logger.info(f'Calling fetch_prices_tool ... \n Current State is {state}')
+        print(f'Calling fetch_prices_tool ... \n Current State is {state}')
+
         items = state["request"]["items"]
         product_ids = [i["product_id"] for i in items]
 
@@ -92,6 +99,9 @@ def make_fetch_prices():
             raise ValueError(f"Missing prices for products: {missing}")
 
         state["price_map"] = price_map
+
+        logger.info(f'Response state of fetch_prices_tool ==> {state}, \n-------------------------------------')
+        print(f'Response state of fetch_prices_tool ==> {state}, \n-------------------------------------')
         return state
 
     return fetch_prices
@@ -111,44 +121,48 @@ def parse_json_response(text: str):
 
 async def pricing_reasoning(state: PricingState) -> PricingState:
     prompt = f"""
-You are a pricing agent in a retail supply chain.
-
-You MUST compute prices using the unit prices provided.
-Apply promotions if applicable.
-Return ONLY valid JSON in the following schema:
-
-{{
-  "items": [
+    You are a pricing agent in a retail supply chain.
+    
+    You MUST compute prices using the unit prices provided.
+    Apply promotions if applicable.
+    Return ONLY valid JSON in the following schema:
+    
     {{
-      "product_id": string,
-      "qty": number,
-      "unit_price": number,
-      "line_total": number,
-      "discounts": number
+      "items": [
+        {{
+          "product_id": string,
+          "qty": number,
+          "unit_price": number,
+          "line_total": number,
+          "discounts": number
+        }}
+      ],
+      "subtotal": number,
+      "total_discount": number,
+      "total": number,
+      "currency": string
     }}
-  ],
-  "subtotal": number,
-  "total_discount": number,
-  "total": number,
-  "currency": string
-}}
-
-Input:
-REQUEST = {json.dumps(state["request"])}
-PRICE_MAP = {json.dumps(state["price_map"])}
-
-Promotion semantics, Only apply if promo_codes in REQUEST is not empty:
-- PROMO10 → 10% off line total
-- BUYS2SAVE5 → $5 off if qty >= 2
-"""
+    
+    Input:
+    REQUEST = {json.dumps(state["request"])}
+    PRICE_MAP = {json.dumps(state["price_map"])}
+    
+    Promotion semantics, Only apply if promo_codes in REQUEST is not empty:
+    - PROMO10 → 10% off line total
+    - BUYS2SAVE5 → $5 off if qty >= 2
+    """
 
     # LangChain Ollama is synchronous → offload
+    logger.info(f'LLM Call Prompt: {prompt}')
     raw = await asyncio.to_thread(llm.invoke, prompt)
-    print(f'RAW LLM Response: {raw}')
+    logger.info(f'LLM Raw response: {raw}')
+    print(f'LLM Raw response: {raw}')
 
     try:
         parsed = parse_json_response(raw)
     except Exception as e:
+        logger.info(f'Invalid JSON from pricing agent: {raw}, {e}')
+        print(f'Invalid JSON from pricing agent: {raw}, {e}')
         raise ValueError(f"Invalid JSON from pricing agent: {raw}") from e
 
     state["result"] = parsed
@@ -179,7 +193,11 @@ async def compute_price(req: PriceRequest):
             "price_map": {},
             "result": {}
         }
+        logger.info(f'Request for compute_price, req = {req}, state={state}')
+        print(f'Request for compute_price, req = {req}, state={state}')
         out = await pricing_graph.ainvoke(state)
+        logger.info(f'Request for compute_price processed successfully, req = {req}, result={out.get("result")}')
+        print(f'Request for compute_price processed successfully, req = {req}, result={out.get("result")}')
         return out["result"]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

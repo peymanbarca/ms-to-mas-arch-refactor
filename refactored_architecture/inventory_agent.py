@@ -19,7 +19,11 @@ import threading
 
 
 logger = logging.getLogger("inventory_agent")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    filename='logs/inventory_agent.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
@@ -79,6 +83,9 @@ async def shutdown():
 
 
 async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState:
+    logger.info(f'Calling validate_stock_tool ... \n Current State is {state}')
+    print(f'Calling validate_stock_tool ... \n Current State is {state}')
+
     if state["action"] == 'ROLLBACK':
         return state
 
@@ -91,13 +98,20 @@ async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState
                 "status": "OUT_OF_STOCK",
                 "failed_sku": item["sku"]
             }
+            logger.info(f'Response state of fetch_cart_node tool ==> {state}, \n-------------------------------------')
+            print(f'Response state of fetch_cart_node tool ==> {state}, \n-------------------------------------')
             return state
 
     state["action"] = "RESERVABLE"
+
+    logger.info(f'Response state of validate_stock_tool ==> {state}, \n-------------------------------------')
+    print(f'Response state of validate_stock_tool ==> {state}, \n-------------------------------------')
     return state
 
 
 async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentState:
+    logger.info(f'Calling apply_reservation_tool ... \n Current State is {state}')
+    print(f'Calling apply_reservation_tool ... \n Current State is {state}')
     results = []
 
     if state["atomic"]:
@@ -124,10 +138,15 @@ async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentSt
         "status": "RESERVED",
         "items": results
     }
+    logger.info(f'Response state of apply_reservation_tool ==> {state["result"]}, \n-----------------------------')
+    print(f'Response state of apply_reservation_tool ==> {state["result"]}, \n---------------------------------')
+
     return state
 
 
 async def rollback_reservation_tool(state: InventoryAgentState) -> InventoryAgentState:
+    logger.info(f'Calling rollback_reservation_tool ... \n Current State is {state}')
+    print(f'Calling rollback_reservation_tool ... \n Current State is {state}')
     results = []
 
     if state["atomic"]:
@@ -154,6 +173,8 @@ async def rollback_reservation_tool(state: InventoryAgentState) -> InventoryAgen
         "status": "RESERVED_ROLLBACK",
         "items": results
     }
+    logger.info(f'Response state of rollback_reservation_tool ==> {state["result"]}, \n-----------------------------')
+    print(f'Response state of rollback_reservation_tool ==> {state["result"]}, \n---------------------------------')
     return state
 
 
@@ -189,8 +210,10 @@ async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
     Return ONLY valid JSON.
     """
 
+    logger.info(f'LLM Call Prompt: {prompt}')
     raw = await asyncio.to_thread(llm.invoke, prompt)
-    print(f'RAW LLM Response: {raw}')
+    logger.info(f'LLM Raw response: {raw}')
+    print(f'LLM Raw response: {raw}')
 
     decision = parse_json_response(raw).get("decision", "OUT_OF_STOCK")
 
@@ -263,7 +286,13 @@ async def reserve_stock(req: ReservationReq):
         "result": None
     }
 
+    logger.info(f'Request for reserve_stock, req = {req}, state={state}')
+    print(f'Request for reserve_stock, req = {req}, state={state}')
+
     out = await inventory_graph.ainvoke(state)
+
+    logger.info(f'Request for reserve_stock processed successfully, req = {req}, result={out.get("result")}')
+    print(f'Request for reserve_stock processed successfully, req = {req}, result={out.get("result")}')
     return out.get("result")
 
 

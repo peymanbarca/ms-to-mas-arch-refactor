@@ -17,7 +17,11 @@ import asyncio
 
 
 logger = logging.getLogger("shipment_agent")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    filename='logs/shipment_agent.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
@@ -61,8 +65,12 @@ async def shutdown():
         db_client.close()
         logger.info("MongoDB connection closed")
 
+
 # Tool: call external carrier
 async def carrier_booking_tool(state: ShipmentState) -> ShipmentState:
+    logger.info(f'Calling carrier_booking_tool ... \n Current State is {state}')
+    print(f'Calling carrier_booking_tool ... \n Current State is {state}')
+
     # Simulate carrier API latency
     time.sleep(0.2)
 
@@ -71,6 +79,8 @@ async def carrier_booking_tool(state: ShipmentState) -> ShipmentState:
         "tracking_id": tracking_id,
         "carrier": "MockCarrier"
     }
+    logger.info(f'Response state of carrier_booking_tool ==> {state}, \n-------------------------------------')
+    print(f'Response state of carrier_booking_tool ==> {state}, \n-------------------------------------')
     return state
 
 
@@ -112,13 +122,16 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
     - if both shipment_id and tracking_id exist, success in response should be true, otherwise it should be false.
     """
 
-    # LangChain Ollama is synchronous → offload
+    logger.info(f'LLM Call Prompt: {prompt}')
     raw = await asyncio.to_thread(llm.invoke, prompt)
-    print(f'RAW LLM Response: {raw}')
+    logger.info(f'LLM Raw response: {raw}')
+    print(f'LLM Raw response: {raw}')
 
     try:
         parsed = parse_json_response(raw)
     except Exception as e:
+        logger.info(f'Invalid JSON from shipment agent: {raw}, {e}')
+        print(f'Invalid JSON from shipment agent: {raw}, {e}')
         raise ValueError(f"Invalid JSON from shipment agent: {raw}") from e
 
     state["result"] = parsed
@@ -149,8 +162,12 @@ async def book_shipment(req: ShipmentRequest):
             "carrier_result": {},
             "result": {}
         }
+        logger.info(f'Request for book_shipment, req = {req}, state={state}')
+        print(f'Request for book_shipment, req = {req}, state={state}')
 
         out = await shipment_graph.ainvoke(state)
+        logger.info(f'Request for process_payment processed successfully, req = {req}, result={out.get("result")}')
+        print(f'Request for process_payment processed successfully, req = {req}, result={out.get("result")}')
 
         success = out["result"]["success"]
         if success is None or success is not True:

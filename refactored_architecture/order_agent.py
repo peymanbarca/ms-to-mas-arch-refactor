@@ -18,9 +18,6 @@ import asyncio
 import requests
 
 
-with open(file='logs/order_agent.log', mode='w') as f:
-    f.write('')
-
 logger = logging.getLogger("order_agent")
 logging.basicConfig(
     filename='logs/order_agent.log',
@@ -209,14 +206,8 @@ def reason_node(state: OrderState):
         Your goal is to complete an order workflow.
         You must decide the next action based on PREVIOUS_ACTION and CURRENT_STATUS input
 
-        Possible actions:
-        - FETCH_CART
-        - PRICE_CART
-        - RESERVE_INVENTORY
-        - PROCESS_PAYMENT
-        - ROLLBACK_INVENTORY
-        - BOOK_SHIPMENT
-        - FINISH
+        Possible actions: [FETCH_CART, PRICE_CART, RESERVE_INVENTORY, PROCESS_PAYMENT, ROLLBACK_INVENTORY, 
+            BOOK_SHIPMENT, FINISH]
 
         Rules:
         - if PREVIOUS_ACTION is null or None, choose next action as FETCH_CART
@@ -267,8 +258,10 @@ def pricing_node(state: OrderState):
 
     state["final_price"] = pricing["total"]
 
-    # todo: init order in DB
-
+    # init order in DB
+    db.orders.insert_one({"_id": state['order_id'], "items": [{'sku': item['sku'], 'qty': item['qty']} for item in state['items']],
+                           "cart_id": state['cart_id'], "status": "INIT",
+                           "final_price": state['final_price']})
     return state
 
 
@@ -283,22 +276,28 @@ def reserve_inventory_node(state: OrderState):
     if res["status"] == "OUT_OF_STOCK":
         state["status"] = "OUT_OF_STOCK"
 
-    # todo: update order status in DB
-
+    # update order status in DB
+    db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": state["inventory_status"]}})
     return state
 
 
 def payment_node(state: OrderState):
     logger.info(f'Calling payment_node tool ... \n Current State is {state}')
     print(f'Calling payment_node tool ... \n Current State is {state}')
-    res = process_payment(state)
-    logger.info(f'Response of payment_node tool ==> {res}, \n-------------------------------------')
-    print(f'Response of payment_node tool ==> {res}, \n-------------------------------------')
+    try:
+        res = process_payment(state)
+        logger.info(f'Response of payment_node tool ==> {res}, \n-------------------------------------')
+        print(f'Response of payment_node tool ==> {res}, \n-------------------------------------')
 
-    state["payment_status"] = res["status"]
-    state["status"] = "PAYMENT_SUCCEED" if res["status"] == "SUCCESS" else "PAYMENT_FAILED"
-
-    # todo: update order status in DB
+        state["payment_status"] = res["status"]
+        state["status"] = "PAYMENT_SUCCEED" if res["status"] == "SUCCESS" else "PAYMENT_FAILED"
+    except Exception as e:
+        logger.info(f'Exception in response of payment_node tool ==> {e}, \n-------------------------------------')
+        print(f'Exception in response of payment_node tool ==> {e}, \n-------------------------------------')
+        state["payment_status"] = "FAILED"
+        state["status"] = "PAYMENT_FAILED"
+    # update order status in DB
+    db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": state["status"]}})
 
     return state
 
@@ -313,14 +312,23 @@ def rollback_node(state: OrderState):
 def shipment_node(state: OrderState):
     logger.info(f'Calling shipment_node tool ... \n Current State is {state}')
     print(f'Calling shipment_node tool ... \n Current State is {state}')
-    res = book_shipment.invoke(state["order_id"])
-    logger.info(f'Response of shipment_node tool ==> {res}, \n-------------------------------------')
-    print(f'Response of shipment_node tool ==> {res}, \n-------------------------------------')
+    try:
+        res = book_shipment.invoke(state["order_id"])
+        logger.info(f'Response of shipment_node tool ==> {res}, \n-------------------------------------')
+        print(f'Response of shipment_node tool ==> {res}, \n-------------------------------------')
 
-    state["shipment_status"] = "BOOKED"
-    state["status"] = "SHIPMENT_BOOKED"
+        state["shipment_status"] = "BOOKED"
+        state["status"] = "SHIPMENT_BOOKED"
+        # update order status in DB
+        db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": "COMPLETED"}})
 
-    # todo: update order status in DB
+    except Exception as e:
+        logger.info(f'Exception in response of shipment_node tool ==> {e}, \n-------------------------------------')
+        print(f'Exception in response of shipment_node tool ==> {e}, \n-------------------------------------')
+        state["shipment_status"] = "FAILED"
+        state["status"] = "SHIPMENT_FAILED"
+        # update order status in DB
+        db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": "SHIPMENT_FAILED"}})
 
     return state
 
@@ -381,6 +389,9 @@ def checkout_cart_agent(cart_id: str):
         "status": None
     }
 
+    logger.info(f'Request for checkout_cart, cart_id = {cart_id}, state={state}')
+    print(f'Request for checkout_cart, cart_id = {cart_id}, state={state}')
+
     final_state = order_agent.invoke(state)
 
     return {
@@ -389,6 +400,9 @@ def checkout_cart_agent(cart_id: str):
     }
 
 
-if __name__ == '__main__':
-    result = checkout_cart_agent(cart_id='5811237b-d180-44e0-b042-29ddd5fa3e4f')
-    print(result)
+@app.post("/cart/{cart_id}/checkout")
+async def checkout_cart(cart_id: str):
+    result = checkout_cart_agent(cart_id=cart_id)
+    logger.info(f'Request for checkout_cart processed successfully, cart_id = {cart_id}, result={result}')
+    print(f'Request for checkout_cart processed successfully, cart_id = {cart_id}, result={result}')
+    return result

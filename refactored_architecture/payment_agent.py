@@ -17,7 +17,11 @@ import asyncio
 
 
 logger = logging.getLogger("payment_agent")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    filename='logs/payment_agent.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
@@ -66,16 +70,23 @@ async def shutdown():
 
 # Tool: call external PSP
 async def call_external_psp_tool(state: PaymentAgentState) -> PaymentAgentState:
+    logger.info(f'Calling call_external_psp_tool ... \n Current State is {state}')
+    print(f'Calling call_external_psp_tool ... \n Current State is {state}')
+
     # Simulate carrier API latency
     time.sleep(0.3)
 
     psp_tracking_id = str(uuid.uuid4())
     state["psp_tracking_id"] = psp_tracking_id
+    logger.info(f'Response state of call_external_psp_tool ==> {state}, \n-------------------------------------')
+    print(f'Response state of call_external_psp_tool ==> {state}, \n-------------------------------------')
     return state
 
 
 # Tool: Persist Payment Result (Deterministic)
 async def persist_payment_tool(state: PaymentAgentState) -> PaymentAgentState:
+    logger.info(f'Calling persist_payment_tool ... \n Current State is {state}')
+    print(f'Calling persist_payment_tool ... \n Current State is {state}')
     doc = {
         "order_id": state["order_id"],
         "final_price": state["final_price"],
@@ -84,6 +95,8 @@ async def persist_payment_tool(state: PaymentAgentState) -> PaymentAgentState:
         "created_at": datetime.datetime.now()
     }
     await db.payments.insert_one(doc)
+    logger.info('Called successfully persist_payment_tool')
+    print('Called successfully persist_payment_tool')
     return state
 
 
@@ -122,12 +135,17 @@ async def payment_reasoning_node(state: PaymentAgentState) -> PaymentAgentState:
     FINAL_PRICE = {state["final_price"]}
     """
 
+    logger.info(f'LLM Call Prompt: {prompt}')
     raw = await asyncio.to_thread(llm.invoke, prompt)
+    logger.info(f'LLM Raw response: {raw}')
+    print(f'LLM Raw response: {raw}')
 
     try:
         decision = parse_json_response(raw)
         assert decision["status"] in ["SUCCESS", "FAILED"]
     except Exception as e:
+        logger.info(f'Invalid payment decision: {raw}, {e}')
+        print(f'Invalid payment decision: {raw}, {e}')
         raise ValueError(f"Invalid payment decision: {raw}") from e
 
     state["decision"] = decision
@@ -160,7 +178,13 @@ async def process_payment(req: PaymentRequest):
             "final_price": req.final_price,
             "decision": {}
         }
+        logger.info(f'Request for process_payment, req = {req}, state={state}')
+        print(f'Request for process_payment, req = {req}, state={state}')
+
         out = await payment_graph.ainvoke(state)
+        logger.info(f'Request for process_payment processed successfully, req = {req}, result={out.get("decision")}')
+        print(f'Request for process_payment processed successfully, req = {req}, result={out.get("decision")}')
+
         return PaymentResponse(
             order_id=req.order_id,
             status=out["decision"]["status"]
