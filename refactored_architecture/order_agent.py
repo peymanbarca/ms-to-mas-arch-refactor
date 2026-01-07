@@ -11,7 +11,7 @@ from typing import TypedDict, List, Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from httpx import AsyncClient
 import json
-from langchain_community.llms import Ollama
+from langchain_ollama import ChatOllama
 from langchain.tools import tool
 from langgraph.graph import StateGraph, END
 import asyncio
@@ -36,7 +36,7 @@ PRICING_SERVICE_URL = "http://127.0.0.1:8002"
 PAYMENT_SERVICE_URL = "http://127.0.0.1:8007/pay-order"
 SHIPMENT_SERVICE_URL = "http://127.0.0.1:8006/book"
 
-llm = Ollama(model="llama3", temperature=0.5)
+llm = ChatOllama(model="qwen2", temperature=0.5)
 
 app = FastAPI(title="Order Agent")
 
@@ -230,13 +230,27 @@ def reason_node(state: OrderState):
         PREVIOUS_ACTION: {state['decision']}
         CURRENT_STATUS: {state['status']}
 
-        - Return the next action as valid json in this schema: {{next_action: string}}
+        - Return the next action as valid json in this schema: {{"next_action": string}}
         """
 
     logger.info(f'LLM Call Prompt: {order_reasoning_prompt}')
-    decision = parse_json_response(llm.invoke(order_reasoning_prompt))
-    logger.info(f'LLM Raw response: {decision}')
-    print(f'LLM Raw response: {decision}')
+    response = llm.invoke(order_reasoning_prompt)
+
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'LLM Raw response: {raw_response}')
+    print(f'LLM Raw response: {raw_response}')
+
+    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' total_tokens: {total_tokens}')
+
+    decision = parse_json_response(raw_response)
+    logger.info(f'LLM Parsed response: {decision}')
+    print(f'LLM Parsed response: {decision}')
 
     state["decision"] = decision["next_action"]
     return state
