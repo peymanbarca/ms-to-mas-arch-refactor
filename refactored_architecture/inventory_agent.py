@@ -29,7 +29,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8001))
 
-llm = ChatOllama(model="qwen2", temperature=0.0)
+llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
 
 app = FastAPI(title="Inventory Agent")
 
@@ -190,6 +190,9 @@ async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
     You are an inventory reservation agent.
     
     Task: 
+    - If Action input is None or null, respond:
+        {{"decision": "VALIDATE_STOCK"}}
+        
     - If Action input is RESERVABLE, respond:
         {{"decision": "APPLY_RESERVE"}}
     
@@ -212,13 +215,17 @@ async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
     input_tokens = response.usage_metadata.get("input_tokens")
     output_tokens = response.usage_metadata.get("output_tokens")
     total_tokens = response.usage_metadata.get("total_tokens")
+    reasoning_text = response.additional_kwargs.get("reasoning_content", None)
+    reasoning_tokens = response.usage_metadata.get("output_token_details", {}).get("reasoning", 0)
+
+    print(f'LLM Reasoning Text: {reasoning_text}')
     logger.info(f'LLM Raw response: {raw_response}')
     print(f'LLM Raw response: {raw_response}')
 
     logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-                f' total_tokens: {total_tokens}')
+                f' reasoning_tokens: {reasoning_tokens}, total_tokens: {total_tokens}')
     print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-                f' total_tokens: {total_tokens}')
+                f' reasoning_tokens: {reasoning_tokens}, total_tokens: {total_tokens}')
 
     decision = parse_json_response(raw_response).get("decision", "OUT_OF_STOCK")
 
@@ -234,20 +241,20 @@ def build_inventory_agent():
     g.add_node("apply", apply_reservation_tool)
     g.add_node("rollback", rollback_reservation_tool)
 
-    g.set_entry_point("validate")
-
-    g.add_edge("validate", "reason")
+    g.set_entry_point("reason")
 
     g.add_conditional_edges(
         "reason",
         lambda s: s["action"],
         {
+            "VALIDATE_STOCK": "validate",
             "APPLY_RESERVE": "apply",
             "ROLLBACK_RESERVE": "rollback",
             "OUT_OF_STOCK": END
         }
     )
 
+    g.add_edge("validate", "reason")
     g.add_edge("apply", END)
     g.add_edge("rollback", END)
 

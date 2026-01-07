@@ -36,7 +36,7 @@ PRICING_SERVICE_URL = "http://127.0.0.1:8002"
 PAYMENT_SERVICE_URL = "http://127.0.0.1:8007/pay-order"
 SHIPMENT_SERVICE_URL = "http://127.0.0.1:8006/book"
 
-llm = ChatOllama(model="qwen2", temperature=0.5)
+llm = ChatOllama(model="qwen2", temperature=0.5, reasoning=False)
 
 app = FastAPI(title="Order Agent")
 

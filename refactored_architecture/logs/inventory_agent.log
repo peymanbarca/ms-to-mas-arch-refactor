@@ -1,0 +1,256 @@
+2026-01-07 14:58:31,505 - INFO - Connected to MongoDB at mongodb://localhost:27017/ db=ms_baseline
+2026-01-07 15:00:23,771 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-01-07 15:00:57,337 - INFO - Request for reserve_stock, req = order_id='string' items=[CartItem(sku='4cc0770f-91bc-4c0d-a26f-7b872f02ca94', qty=2)] atomic_update=False delay=0.0 drop=0, state={'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': None, 'result': None}
+2026-01-07 15:00:57,340 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: None
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:00:57,430 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 400 Bad Request"
+2026-01-07 15:02:55,744 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-01-07 15:02:57,651 - INFO - Request for reserve_stock, req = order_id='string' items=[CartItem(sku='4cc0770f-91bc-4c0d-a26f-7b872f02ca94', qty=2)] atomic_update=False delay=0.0 drop=0, state={'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': None, 'result': None}
+2026-01-07 15:02:57,654 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: None
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:03:39,797 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:03:43,872 - INFO - LLM Raw response: {"decision": "VALIDATE_STOCK"}
+2026-01-07 15:03:43,872 - INFO - LLM Token Metrics: input_tokens: 138, output_tokens: 9, reasoning_tokens: 0, total_tokens: 147
+2026-01-07 15:03:44,000 - INFO - Calling validate_stock_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'VALIDATE_STOCK', 'result': None}
+2026-01-07 15:03:44,364 - INFO - Response state of validate_stock_tool ==> {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'RESERVABLE', 'result': None}, 
+-------------------------------------
+2026-01-07 15:03:44,366 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: RESERVABLE
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:03:47,346 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:03:51,843 - INFO - LLM Raw response: {"decision": "APPLY_RESERVE"}
+2026-01-07 15:03:51,844 - INFO - LLM Token Metrics: input_tokens: 140, output_tokens: 10, reasoning_tokens: 0, total_tokens: 150
+2026-01-07 15:03:51,851 - INFO - Calling apply_reservation_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'APPLY_RESERVE', 'result': None}
+2026-01-07 15:03:51,870 - INFO - Response state of apply_reservation_tool ==> {'order_id': 'string', 'status': 'RESERVED', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 8}]}, 
+-----------------------------
+2026-01-07 15:03:51,874 - INFO - Request for reserve_stock processed successfully, req = order_id='string' items=[CartItem(sku='4cc0770f-91bc-4c0d-a26f-7b872f02ca94', qty=2)] atomic_update=False delay=0.0 drop=0, result={'order_id': 'string', 'status': 'RESERVED', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 8}]}
+2026-01-07 15:04:06,669 - INFO - Request for reserve_stock, req = order_id='string' items=[CartItem(sku='4cc0770f-91bc-4c0d-a26f-7b872f02ca94', qty=2)] atomic_update=False delay=0.0 drop=0, state={'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': None, 'result': None}
+2026-01-07 15:04:06,679 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: None
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:04:09,266 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:04:13,037 - INFO - LLM Raw response: {"decision": "VALIDATE_STOCK"}
+2026-01-07 15:04:13,037 - INFO - LLM Token Metrics: input_tokens: 138, output_tokens: 9, reasoning_tokens: 0, total_tokens: 147
+2026-01-07 15:04:13,038 - INFO - Calling validate_stock_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'VALIDATE_STOCK', 'result': None}
+2026-01-07 15:04:13,040 - INFO - Response state of validate_stock_tool ==> {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'RESERVABLE', 'result': None}, 
+-------------------------------------
+2026-01-07 15:04:13,041 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: RESERVABLE
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:04:15,738 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:04:19,552 - INFO - LLM Raw response: {"decision": "APPLY_RESERVE"}
+2026-01-07 15:04:19,552 - INFO - LLM Token Metrics: input_tokens: 140, output_tokens: 10, reasoning_tokens: 0, total_tokens: 150
+2026-01-07 15:04:19,553 - INFO - Calling apply_reservation_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'APPLY_RESERVE', 'result': None}
+2026-01-07 15:04:19,556 - INFO - Response state of apply_reservation_tool ==> {'order_id': 'string', 'status': 'RESERVED', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 6}]}, 
+-----------------------------
+2026-01-07 15:04:19,557 - INFO - Request for reserve_stock processed successfully, req = order_id='string' items=[CartItem(sku='4cc0770f-91bc-4c0d-a26f-7b872f02ca94', qty=2)] atomic_update=False delay=0.0 drop=0, result={'order_id': 'string', 'status': 'RESERVED', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 6}]}
+2026-01-07 15:04:37,826 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: ROLLBACK
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:04:40,749 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:04:45,086 - INFO - LLM Raw response: {"decision": "ROLLBACK_RESERVE"}
+2026-01-07 15:04:45,086 - INFO - LLM Token Metrics: input_tokens: 140, output_tokens: 10, reasoning_tokens: 0, total_tokens: 150
+2026-01-07 15:04:45,093 - INFO - Calling rollback_reservation_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'ROLLBACK_RESERVE', 'result': None}
+2026-01-07 15:04:45,101 - INFO - Response state of rollback_reservation_tool ==> {'order_id': 'string', 'status': 'RESERVED_ROLLBACK', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 8}]}, 
+-----------------------------
+2026-01-07 15:05:11,519 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: ROLLBACK
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:05:12,023 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:05:15,992 - INFO - LLM Raw response: {"decision": "ROLLBACK_RESERVE"}
+2026-01-07 15:05:15,993 - INFO - LLM Token Metrics: input_tokens: 140, output_tokens: 10, reasoning_tokens: 0, total_tokens: 150
+2026-01-07 15:05:15,994 - INFO - Calling rollback_reservation_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'ROLLBACK_RESERVE', 'result': None}
+2026-01-07 15:05:16,003 - INFO - Response state of rollback_reservation_tool ==> {'order_id': 'string', 'status': 'RESERVED_ROLLBACK', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 10}]}, 
+-----------------------------
+2026-01-07 15:05:24,726 - INFO - Request for reserve_stock, req = order_id='string' items=[CartItem(sku='4cc0770f-91bc-4c0d-a26f-7b872f02ca94', qty=2)] atomic_update=False delay=0.0 drop=0, state={'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': None, 'result': None}
+2026-01-07 15:05:24,728 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: None
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:05:27,171 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:05:30,699 - INFO - LLM Raw response: {"decision": "VALIDATE_STOCK"}
+2026-01-07 15:05:30,699 - INFO - LLM Token Metrics: input_tokens: 138, output_tokens: 9, reasoning_tokens: 0, total_tokens: 147
+2026-01-07 15:05:30,702 - INFO - Calling validate_stock_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'VALIDATE_STOCK', 'result': None}
+2026-01-07 15:05:30,703 - INFO - Response state of validate_stock_tool ==> {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'RESERVABLE', 'result': None}, 
+-------------------------------------
+2026-01-07 15:05:30,704 - INFO - LLM Call Prompt: 
+    You are an inventory reservation agent.
+    
+    Task: 
+    - If Action input is None or null, respond:
+        {"decision": "VALIDATE_STOCK"}
+        
+    - If Action input is RESERVABLE, respond:
+        {"decision": "APPLY_RESERVE"}
+    
+    - else if Action input is OUT_OF_STOCK, respond:
+        {"decision": "OUT_OF_STOCK"}
+    
+    - else if Action input is ROLLBACK, respond:
+        {"decision": "ROLLBACK_RESERVE"}
+
+    Input:
+    Action: RESERVABLE
+    
+    Return ONLY valid JSON.
+    
+2026-01-07 15:05:33,489 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-01-07 15:05:37,756 - INFO - LLM Raw response: {"decision": "APPLY_RESERVE"}
+2026-01-07 15:05:37,757 - INFO - LLM Token Metrics: input_tokens: 140, output_tokens: 10, reasoning_tokens: 0, total_tokens: 150
+2026-01-07 15:05:37,758 - INFO - Calling apply_reservation_tool ... 
+ Current State is {'order_id': 'string', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'qty': 2}], 'atomic': False, 'action': 'APPLY_RESERVE', 'result': None}
+2026-01-07 15:05:37,760 - INFO - Response state of apply_reservation_tool ==> {'order_id': 'string', 'status': 'RESERVED', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 8}]}, 
+-----------------------------
+2026-01-07 15:05:37,760 - INFO - Request for reserve_stock processed successfully, req = order_id='string' items=[CartItem(sku='4cc0770f-91bc-4c0d-a26f-7b872f02ca94', qty=2)] atomic_update=False delay=0.0 drop=0, result={'order_id': 'string', 'status': 'RESERVED', 'items': [{'sku': '4cc0770f-91bc-4c0d-a26f-7b872f02ca94', 'remaining': 8}]}

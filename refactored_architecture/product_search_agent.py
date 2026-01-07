@@ -24,7 +24,7 @@ MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8008))
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:8002")
 
-llm = ChatOllama(model="qwen2", temperature=0.0)
+llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
 
 app = FastAPI(title="Product Search Agent")
 
