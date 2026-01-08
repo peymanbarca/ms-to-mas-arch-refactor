@@ -240,13 +240,17 @@ def reason_node(state: OrderState):
     input_tokens = response.usage_metadata.get("input_tokens")
     output_tokens = response.usage_metadata.get("output_tokens")
     total_tokens = response.usage_metadata.get("total_tokens")
+    reasoning_text = response.additional_kwargs.get("reasoning_content", None)
+    reasoning_tokens = response.usage_metadata.get("output_token_details", {}).get("reasoning", 0)
+
+    print(f'LLM Reasoning Text: {reasoning_text}')
     logger.info(f'LLM Raw response: {raw_response}')
     print(f'LLM Raw response: {raw_response}')
 
     logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-                f' total_tokens: {total_tokens}')
+                f' reasoning_tokens: {reasoning_tokens}, total_tokens: {total_tokens}')
     print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-                f' total_tokens: {total_tokens}')
+                f' reasoning_tokens: {reasoning_tokens}, total_tokens: {total_tokens}')
 
     decision = parse_json_response(raw_response)
     logger.info(f'LLM Parsed response: {decision}')
