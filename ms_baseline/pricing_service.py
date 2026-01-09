@@ -40,6 +40,7 @@ class PriceRequest(BaseModel):
     items: List[PriceRequestItem]
     promo_codes: Optional[List[str]] = None
     currency: Optional[str] = "USD"
+    only_final_price: bool = False
 
 
 class PriceResponseItem(BaseModel):
@@ -51,11 +52,11 @@ class PriceResponseItem(BaseModel):
 
 
 class PriceResponse(BaseModel):
-    items: List[PriceResponseItem]
-    subtotal: float
+    items: List[PriceResponseItem] = []
+    subtotal: Optional[float] = None
     total_discount: float
     total: float
-    currency: str
+    currency: Optional[str] = None
 
 
 @app.on_event("startup")

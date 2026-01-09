@@ -130,7 +130,8 @@ def price_cart(state):
     items = state['items']
     payload = {
         "items": [{"product_id": i["sku"], "qty": i["qty"]} for i in items],
-        "promo_codes": []
+        "promo_codes": [],
+        "only_final_price": True
     }
     r = requests.post(f"{PRICING_SERVICE_URL}/price", json=payload, timeout=10)
     r.raise_for_status()
@@ -205,7 +206,11 @@ def reason_node(state: OrderState):
 
         Your goal is to complete an order workflow.
         You must decide the next action based on PREVIOUS_ACTION and CURRENT_STATUS input
+        Return ONLY a JSON response not python code
 
+        - Do not return middle steps and thinking procedure in response    
+        - Return the next action as valid json in this schema: {{"next_action": string}}
+        
         Possible actions: 
         - FETCH_CART
         - PRICE_CART
@@ -218,7 +223,7 @@ def reason_node(state: OrderState):
         Rules:
         - if PREVIOUS_ACTION is null or None or empty, choose next action as FETCH_CART
         - else choose next action based on this workflow:
-            FETCH_CART -> PRICE_CART -> RESERVE_INVENTORY -> PROCESS_PAYMENT -> BOOK_SHIPMENT -> FINISH
+            1) FETCH_CART --> 2) PRICE_CART --> 3) RESERVE_INVENTORY --> 4) PROCESS_PAYMENT --> 5) BOOK_SHIPMENT --> 6) FINISH
             
         Rule Exceptions:    
         - If CURRENT_STATUS is OUT_OF_STOCK choose next action as FINISH
@@ -230,7 +235,6 @@ def reason_node(state: OrderState):
         PREVIOUS_ACTION: {state['decision']}
         CURRENT_STATUS: {state['status']}
 
-        - Return the next action as valid json in this schema: {{"next_action": string}}
         """
 
     logger.info(f'LLM Call Prompt: {order_reasoning_prompt}')
@@ -415,7 +419,7 @@ def checkout_cart_agent(cart_id: str):
     logger.info(f'Request for checkout_cart, cart_id = {cart_id}, state={state}')
     print(f'Request for checkout_cart, cart_id = {cart_id}, state={state}')
 
-    final_state = order_agent.invoke(state)
+    final_state = order_agent.invoke(state, config={"recursion_limit": 3})
 
     return {
         "order_id": final_state["order_id"],

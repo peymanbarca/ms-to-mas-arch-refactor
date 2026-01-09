@@ -130,7 +130,10 @@ async def cart_reasoning_node(state: CartAgentState) -> CartAgentState:
     - Cart items are identified by SKU
     - Quantity must always be >= 1
     - Removing an item deletes it entirely
-    - Output ONLY valid JSON
+
+
+    - Do not return middle steps and thinking procedure in response
+    - Return just and ONLY valid JSON for final step in the following schema:
     
     Schema:
     {{

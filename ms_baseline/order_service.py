@@ -88,7 +88,7 @@ async def checkout_cart(cart_id: str):
         cart_items = cart['items']
         try:
             price_payload = {"items": [{"product_id": item['sku'], "qty": item['qty']} for item in cart_items],
-                             "promo_codes": []}
+                             "promo_codes": [], "only_final_price": True}
             price_resp = await http_client.post(f"{PRICING_SERVICE_URL}/price", json=price_payload, timeout=10)
             logger.info(f"Pricing Service Called, req: {price_payload},"
                         f" response_status: {price_resp.status_code}, trace_id={trace_id}")

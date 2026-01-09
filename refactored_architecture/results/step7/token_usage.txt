@@ -1,0 +1,39 @@
+pricing_agent
+LLM Token Metrics: input_tokens: 240, output_tokens: 68, total_tokens: 308
+2026-01-08 10:48:42,605 - INFO - LLM Raw response: Here is the response:
+
+{
+  "total_discount": 0,
+  "total": 4000
+}
+
+
+
+shipment_agent
+LLM Token Metrics: input_tokens: 225, output_tokens: 127, total_tokens: 352
+2026-01-07 19:13:48,129 - INFO - LLM Raw response: Here is the JSON response:
+
+```
+{
+  "shipment_id": "e4c5d0a6-7f2c-4f9a-b93a-f5b8a5f5f5f5",
+  "tracking_id": "9221a08a-f97f-44b8-aa10-77dc1cf3f075",
+  "success": true
+}
+
+
+
+
+
+shopping_cart_agent
+is not accepted and revert_back as service
+
+
+
+inventory_agent x2 LLM Calls
+is not accepted and revert_back as service
+
+
+
+payment_agent
+LLM Token Metrics: input_tokens: 162, output_tokens: 7, total_tokens: 169
+LLM Raw response: {"status": "SUCCESS"}

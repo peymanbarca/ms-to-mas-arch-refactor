@@ -103,19 +103,18 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
     Your task:
     - Confirm existence of tracking_id in CARRIER_RESULT input
     - Generate shipment_id as uuid
-    - Return JSON response
+    - Return ONLY a JSON response not python code
 
     Rules:
     - tracking_id must come from CARRIER_RESULT input
     - shipment_id must be newly generated as UUID
     - if both shipment_id and tracking_id exist, success in response should be true, otherwise it should be false.
     
-    Return ONLY JSON response in the schema below
+    Return just and ONLY valid JSON for final step in the following schema:
 
     Schema:
     {{
       "shipment_id": string,
-      "tracking_id": string,
       "success" bool
     }}
 
@@ -148,6 +147,7 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
         raise ValueError(f"Invalid JSON from shipment agent: {raw_response}") from e
 
     state["result"] = parsed
+    state["result"]["tracking_id"] = state["carrier_result"]["tracking_id"]
     return state
 
 

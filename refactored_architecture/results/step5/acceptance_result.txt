@@ -1,0 +1,1 @@
+inventory_agent introduced some latency and inconsistency and is not accepted, and revert_back as inventory_service.py

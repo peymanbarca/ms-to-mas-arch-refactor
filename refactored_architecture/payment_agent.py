@@ -120,20 +120,20 @@ async def payment_reasoning_node(state: PaymentAgentState) -> PaymentAgentState:
     You must decide whether a payment succeeds or fails.
     
     Rules:
-    - Output MUST be valid JSON only
     - Status must be either "SUCCESS" or "FAILED"
     - if PSP_TRACKING_ID input is not null the Status should be SUCCESS, otherwise it should be FAILED
-    
+    - Return ONLY a JSON response not python code
+
+    - Do not return middle steps and thinking procedure in response    
+    - Output MUST be only a valid JSON in the bellow schema:
+        
     Schema:
     {{
-      "status": "SUCCESS" | "FAILED",
-      "reason": string
+      "status": "SUCCESS" | "FAILED"
     }}
     
     Input:
     PSP_TRACKING_ID = {state["psp_tracking_id"]}
-    ORDER_ID = {state["order_id"]}
-    FINAL_PRICE = {state["final_price"]}
     """
 
     logger.info(f'LLM Call Prompt: {prompt}')

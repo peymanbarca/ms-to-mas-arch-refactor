@@ -42,6 +42,7 @@ class PriceRequest(BaseModel):
     items: List[PriceRequestItem]
     promo_codes: Optional[List[str]] = None
     currency: Optional[str] = "USD"
+    only_final_price: bool = False
 
 class PriceResponseItem(BaseModel):
     product_id: str
@@ -51,11 +52,11 @@ class PriceResponseItem(BaseModel):
     discounts: float
 
 class PriceResponse(BaseModel):
-    items: List[PriceResponseItem]
-    subtotal: float
+    items: List[PriceResponseItem] = []
+    subtotal: Optional[float] = None
     total_discount: float
     total: float
-    currency: str
+    currency: Optional[str] = None
 
 class PricingState(TypedDict):
     request: Dict[str, Any]
@@ -129,23 +130,12 @@ async def pricing_reasoning(state: PricingState) -> PricingState:
         - PROMO10 → 10% off line total
         - BUYS2SAVE5 → $5 off if qty >= 2
     
-    
-    - Return ONLY valid JSON in the following schema:
+    - Do not return middle steps and thinking procedure in response
+    - Return just and ONLY valid JSON for final step in the following schema:
     
     {{
-      "items": [
-        {{
-          "product_id": string,
-          "qty": number,
-          "unit_price": number,
-          "line_total": number,
-          "discounts": number
-        }}
-      ],
-      "subtotal": number,
       "total_discount": number,
-      "total": number,
-      "currency": string
+      "total": number
     }}
     
     Input:

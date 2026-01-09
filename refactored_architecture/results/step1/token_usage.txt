@@ -1,20 +1,8 @@
 pricing_agent
-LLM Token Metrics: input_tokens: 272, output_tokens: 172, total_tokens: 444
-2026-01-07 19:14:19,454 - INFO - LLM Raw response: Here is the response in JSON format:
+LLM Token Metrics: input_tokens: 240, output_tokens: 68, total_tokens: 308
+2026-01-08 10:48:42,605 - INFO - LLM Raw response: Here is the response:
 
-```
 {
-  "items": [
-    {
-      "product_id": "4cc0770f-91bc-4c0d-a26f-7b872f02ca94",
-      "qty": 2,
-      "unit_price": 2000.0,
-      "line_total": 4000.0,
-      "discounts": 0.0
-    }
-  ],
-  "subtotal": 4000.0,
-  "total_discount": 0.0,
-  "total": 4000.0,
-  "currency": "USD"
+  "total_discount": 0,
+  "total": 4000
 }
