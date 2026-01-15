@@ -1,2 +1,0 @@
-order_agent introduced high latency and high inconsistency and is not accepted, and revert_back as order_service.py
-it has step repetition error in choosing sequence of tool calling

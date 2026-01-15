@@ -1,0 +1,10 @@
+logs for 20 requests main workflow:
+total 324K
+-rw-rw---- 1 pe_yazd pe_yazd    0 Jan 14 19:24 inventory_agent.log
+-rw-rw---- 1 pe_yazd pe_yazd 264K Jan 14 19:25 order_agent.log
+-rw-rw---- 1 pe_yazd pe_yazd  21K Jan 14 19:25 payment_agent.log
+-rw-rw---- 1 pe_yazd pe_yazd    0 Jan 14 19:24 pricing_agent.log
+-rw-rw---- 1 pe_yazd pe_yazd    0 Jan 14 19:24 procurement_agent.log
+-rw-rw---- 1 pe_yazd pe_yazd    0 Jan 14 19:24 product_search_agent.log
+-rw-rw---- 1 pe_yazd pe_yazd  23K Jan 14 19:25 shipment_agent.log
+-rw-rw---- 1 pe_yazd pe_yazd    0 Jan 14 19:24 shopping_cart_agent.log

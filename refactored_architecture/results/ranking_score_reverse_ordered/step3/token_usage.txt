@@ -1,0 +1,32 @@
+order_agent
+1) x6 LLM Calls
+LLM Token Metrics: input_tokens: 307, output_tokens: 9, reasoning_tokens: 0, total_tokens: 316
+2026-01-08 12:40:19,954 - INFO - LLM Raw response: {"next_action": "FETCH_CART"}
+LLM Token Metrics: input_tokens: 307, output_tokens: 9, reasoning_tokens: 0, total_tokens: 316
+2026-01-08 12:40:21,449 - INFO - LLM Raw response: {"next_action": "PRICE_CART"}
+LLM Token Metrics: input_tokens: 307, output_tokens: 11, reasoning_tokens: 0, total_tokens: 318
+2026-01-08 12:40:21,449 - INFO - LLM Raw response: {"next_action": "RESERVE_INVENTORY"}
+LLM Token Metrics: input_tokens: 309, output_tokens: 9, reasoning_tokens: 0, total_tokens: 318
+2026-01-08 12:40:21,716 - INFO - LLM Raw response: {"next_action": "PROCESS_PAYMENT"}
+LLM Token Metrics: input_tokens: 311, output_tokens: 11, reasoning_tokens: 0, total_tokens: 322
+2026-01-08 12:40:22,859 - INFO - LLM Raw response: {"next_action": "BOOK_SHIPMENT"}
+LLM Token Metrics: input_tokens: 310, output_tokens: 9, reasoning_tokens: 0, total_tokens: 319
+2026-01-08 12:40:24,549 - INFO - LLM Raw response: {"next_action": "FINISH"}
+
+2) x4 LLM Calls
+
+LLM Token Metrics: input_tokens: 307, output_tokens: 9, reasoning_tokens: 0, total_tokens: 316
+2026-01-08 12:40:19,954 - INFO - LLM Raw response: {"next_action": "FETCH_CART"}
+LLM Token Metrics: input_tokens: 307, output_tokens: 9, reasoning_tokens: 0, total_tokens: 316
+2026-01-08 12:40:21,449 - INFO - LLM Raw response: {"next_action": "PRICE_CART"}
+LLM Token Metrics: input_tokens: 307, output_tokens: 11, reasoning_tokens: 0, total_tokens: 318
+2026-01-08 12:40:21,449 - INFO - LLM Raw response: {"next_action": "RESERVE_INVENTORY"}
+LLM Token Metrics: input_tokens: 328, output_tokens: 9, reasoning_tokens: 0, total_tokens: 337
+2026-01-14 18:00:02,250 - INFO - LLM Parsed response: {'next_action': 'FINISH'}
+
+
+--------------------------------
+
+payment_agent
+2026-01-14 18:18:46,832 - INFO - LLM Raw response: {"status": "SUCCESS"}
+2026-01-14 18:18:46,832 - INFO - LLM Token Metrics: input_tokens: 160, output_tokens: 7, total_tokens: 167
