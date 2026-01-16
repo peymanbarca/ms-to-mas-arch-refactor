@@ -1,0 +1,33 @@
+shopping_cart_agent
+2026-01-15 21:39:05,891 - INFO - LLM Raw response: {
+  "cart_id": "5811237b-d180-44e0-b042-29ddd5fa3e4f",
+  "items": [
+    { "sku": "4cc0770f-91bc-4c0d-a26f-7b872f02ca94", "qty": 2 }
+  ]
+}
+2026-01-15 21:39:05,892 - INFO - LLM Token Metrics: input_tokens: 230, output_tokens: 75, total_tokens: 305
+
+-----------------------------
+
+
+pricing_agent
+2026-01-15 21:45:32,926 - INFO - LLM Raw response: Here is the JSON response:
+
+```
+{
+  "total_discount": 4000.0,
+  "total": 4000.0
+}
+```
+2026-01-15 21:45:32,926 - INFO - LLM Token Metrics: input_tokens: 240, output_tokens: 33, total_tokens: 273
+
+-----------------------------
+
+
+shipment_agent
+2026-01-15 22:10:28,979 - INFO - LLM Raw response: {
+  "shipment_id": "7f4c6b2a-f8ad-49a0-93a5-eb3f5f5f5f5f",
+  "success": true
+}
+2026-01-15 22:10:28,979 - INFO - LLM Token Metrics: input_tokens: 226, output_tokens: 47, total_tokens: 273
+

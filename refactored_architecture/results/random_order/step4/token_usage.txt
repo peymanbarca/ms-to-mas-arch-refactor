@@ -1,0 +1,39 @@
+shopping_cart_agent
+2026-01-15 21:39:05,891 - INFO - LLM Raw response: {
+  "cart_id": "5811237b-d180-44e0-b042-29ddd5fa3e4f",
+  "items": [
+    { "sku": "4cc0770f-91bc-4c0d-a26f-7b872f02ca94", "qty": 2 }
+  ]
+}
+2026-01-15 21:39:05,892 - INFO - LLM Token Metrics: input_tokens: 230, output_tokens: 75, total_tokens: 305
+
+-----------------------------
+
+
+pricing_agent
+2026-01-15 21:45:32,926 - INFO - LLM Raw response: Here is the JSON response:
+
+```
+{
+  "total_discount": 4000.0,
+  "total": 4000.0
+}
+```
+2026-01-15 21:45:32,926 - INFO - LLM Token Metrics: input_tokens: 240, output_tokens: 33, total_tokens: 273
+
+-----------------------------
+
+
+inventory_agent x2 LLM calls
+1)
+2026-01-14 18:28:03,711 - INFO - LLM Raw response: {"decision": "VALIDATE_STOCK"}
+2026-01-14 18:28:03,711 - INFO - LLM Token Metrics: input_tokens: 129, output_tokens: 9, reasoning_tokens: 0, total_tokens: 138
+2026-01-14 18:27:40,573 - INFO - LLM Raw response: {"decision": "APPLY_RESERVE"}
+2026-01-14 18:27:40,573 - INFO - LLM Token Metrics: input_tokens: 131, output_tokens: 10, reasoning_tokens: 0, total_tokens: 141
+
+
+2)
+2026-01-14 18:28:03,711 - INFO - LLM Raw response: {"decision": "VALIDATE_STOCK"}
+2026-01-14 18:28:03,711 - INFO - LLM Token Metrics: input_tokens: 129, output_tokens: 9, reasoning_tokens: 0, total_tokens: 138
+2026-01-14 18:28:03,998 - INFO - LLM Raw response: {"decision": "OUT_OF_STOCK"}
+2026-01-14 18:28:03,998 - INFO - LLM Token Metrics: input_tokens: 131, output_tokens: 9, reasoning_tokens: 0, total_tokens: 140
