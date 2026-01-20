@@ -55,21 +55,28 @@ class ReservationReq(BaseModel):
 
 class InventoryAgentState(TypedDict):
     order_id: str
-    items: List[Dict[str, int]]
+    items: List[Dict[str, int|str]]
+
     atomic: bool
-    action: str
+
+    # Derived by tools (not LLM hallucination)
+    action: Optional[str]
+
+    # Ledger-derived signals
+    ledger_pending: Dict[str, int]        # sku -> pending qty
+    effective_available: Dict[str, int]   # sku -> available after ledger
+
     result: Optional[Dict[str, Any]]
 
 
 class LedgerEvent(BaseModel):
-    event_id: str
     order_id: str
     sku: str
     qty: int
     event_type: Literal[
-        "RESERVE_ATTEMPT",
-        "RESERVE_SUCCESS",
-        "RESERVE_FAILED",
+        "PENDING",
+        "COMMITTED",
+        "FAILED",
         "ROLLBACK"
     ]
     stock_before: int
@@ -85,17 +92,30 @@ async def write_ledger_event(
     stock_before: int,
     stock_after: int
 ):
-    doc = {
-        "event_id": str(uuid.uuid4()),
-        "order_id": order_id,
-        "sku": sku,
-        "qty": qty,
-        "event_type": event_type,
-        "stock_before": stock_before,
-        "stock_after": stock_after,
-        "timestamp": datetime.datetime.utcnow()
-    }
-    await db.inventory_ledger.insert_one(doc)
+    now = datetime.datetime.utcnow()
+
+    # order_id is the document key
+    # If document exists → $set updates it
+    # If not → document is inserted
+    # Atomic (no race conditions)
+
+    await db.inventory_ledger.update_one(
+        {"order_id": order_id},          # uniqueness condition
+        {
+            "$set": {
+                "sku": sku,
+                "qty": qty,
+                "event_type": event_type,
+                "stock_before": stock_before,
+                "stock_after": stock_after,
+                "timestamp": now
+            },
+            "$setOnInsert": {
+                "created_at": now
+            }
+        },
+        upsert=True
+    )
 
 
 @app.on_event("startup")
@@ -114,7 +134,7 @@ async def shutdown():
         logger.info("MongoDB connection closed")
 
 
-# Tool: Extended validate_stock_tool with ledger attempt
+# Tool: Extended validate_stock_tool with ledger attempt and be ledger-aware
 async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState:
     logger.info(f'Calling validate_stock_tool ... \n Current State is {state}')
     print(f'Calling validate_stock_tool ... \n Current State is {state}')
@@ -122,39 +142,65 @@ async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState
     if state["action"] == 'ROLLBACK':
         return state
 
+    ledger_pending = {}
+    effective_available = {}
+
     for item in state["items"]:
+
+        # 1. Read physical stock
         doc = await db.inventory.find_one({"sku": item["sku"]})
         stock = doc["stock"] if doc else 0
 
-        await write_ledger_event(
-            order_id=state["order_id"],
-            sku=item["sku"],
-            qty=item["qty"],
-            event_type="RESERVE_ATTEMPT",
-            stock_before=stock,
-            stock_after=stock
-        )
+        # 2. Read ledger pending reservations (in-flight)
+        cursor = db.inventory_ledger.aggregate([
+            {"$match": {"sku": item["sku"], "status": "PENDING"}},
+            {"$group": {"_id": "$sku", "pending_qty": {"$sum": "$qty"}}}
+        ])
+        rows = await cursor.to_list(length=1)
+        pending_qty = rows[0]["pending_qty"] if rows else 0
 
-        if stock < item["qty"]:
+        # 3. Compute effective availability
+        available = stock - pending_qty
+
+        ledger_pending[item["sku"]] = pending_qty
+        effective_available[item["sku"]] = available
+
+        if available < item["qty"]:
             await write_ledger_event(
                 order_id=state["order_id"],
                 sku=item["sku"],
                 qty=item["qty"],
-                event_type="RESERVE_FAILED",
+                event_type="FAILED",
                 stock_before=stock,
                 stock_after=stock
             )
 
             state["action"] = "OUT_OF_STOCK"
+            state["ledger_pending"] = ledger_pending
+            state["effective_available"] = effective_available
             state["result"] = {
                 "order_id": state["order_id"],
                 "status": "OUT_OF_STOCK",
-                "failed_sku": item["sku"]
+                "failed_sku": item["sku"],
+                "physical_stock": stock,
+                "pending_qty": pending_qty
             }
             logger.info(f'Response state of validate_stock_tool tool ==> {state}, \n-------------------------------------')
             print(f'Response state of validate_stock_tool tool ==> {state}, \n-------------------------------------')
             return state
 
+    await write_ledger_event(
+        order_id=state["order_id"],
+        sku=item["sku"],
+        qty=item["qty"],
+        event_type="PENDING",
+        stock_before=stock,
+        stock_after=stock
+    )
+
+    # If all items pass
+    state["ledger_pending"] = ledger_pending
+    state["effective_available"] = effective_available
     state["action"] = "RESERVABLE"
 
     logger.info(f'Response state of validate_stock_tool ==> {state}, \n-------------------------------------')
@@ -186,7 +232,7 @@ async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentSt
                     state["order_id"],
                     item["sku"],
                     item["qty"],
-                    "RESERVE_SUCCESS",
+                    "COMMITTED",
                     before,
                     after
                 )
@@ -206,7 +252,7 @@ async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentSt
                 state["order_id"],
                 item["sku"],
                 item["qty"],
-                "RESERVE_SUCCESS",
+                "COMMITTED",
                 stock_before=before,
                 stock_after=new_stock
             )
@@ -299,26 +345,48 @@ def parse_json_response(text: str):
 
 async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
     prompt = f"""
-    You are an inventory reservation agent.
-    
-    Task: 
-    - If Action input is None or null, respond:
-        {{"decision": "VALIDATE_STOCK"}}
-        
-    - If Action input is RESERVABLE, respond:
-        {{"decision": "APPLY_RESERVE"}}
-    
-    - else if Action input is OUT_OF_STOCK, respond:
-        {{"decision": "OUT_OF_STOCK"}}
-    
-    - else if Action input is ROLLBACK, respond:
-        {{"decision": "ROLLBACK_RESERVE"}}
+    You are an inventory reservation decision agent.
 
-    Input:
-    Action: {state["action"]}
-    
-    Return ONLY valid JSON.
+    You must make a decision ONLY based on the structured inputs below.
+    Do NOT infer or assume missing data.
+
+    Decision rules (strict, deterministic):
+
+    1. If Action is null or missing:
+       → return {{ "decision": "VALIDATE_STOCK" }}
+
+    2. If Action is OUT_OF_STOCK:
+       → return {{ "decision": "OUT_OF_STOCK" }}
+
+    3. If Action is RESERVABLE:
+       - For EACH item:
+           - Use EFFECTIVE_AVAILABLE (physical stock minus ledger pending)
+           - If EFFECTIVE_AVAILABLE < requested qty:
+               → return {{ "decision": "OUT_OF_STOCK" }}
+       - Otherwise:
+           → return {{ "decision": "APPLY_RESERVE" }}
+
+    4. If Action is ROLLBACK:
+       → return {{ "decision": "ROLLBACK_RESERVE" }}
+
+    Inputs:
+    Action = {state["action"]}
+
+    Items = {json.dumps(state["items"])}
+
+    Ledger Pending = {json.dumps(state.get("ledger_pending", {}))}
+
+    Effective Available = {json.dumps(state.get("effective_available", {}))}
+
+    Return ONLY valid JSON:
+    {{ "decision": string }}
     """
+
+    ### 🔒 Why this prompt is safe
+        ### No free-form reasoning
+        ### Numerical, tool-derived inputs only
+        ### Explicit gate using effective availability
+        ### Low-temperature deterministic behavior
 
     logger.info(f'LLM Call Prompt: {prompt}')
     response = await asyncio.to_thread(llm.invoke, prompt)
