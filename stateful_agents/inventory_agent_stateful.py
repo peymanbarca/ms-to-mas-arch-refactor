@@ -7,7 +7,7 @@ import httpx
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import TypedDict, List, Dict, Any, Optional, Literal
 from motor.motor_asyncio import AsyncIOMotorClient
 from httpx import AsyncClient
 from pymongo import ReturnDocument
@@ -61,6 +61,43 @@ class InventoryAgentState(TypedDict):
     result: Optional[Dict[str, Any]]
 
 
+class LedgerEvent(BaseModel):
+    event_id: str
+    order_id: str
+    sku: str
+    qty: int
+    event_type: Literal[
+        "RESERVE_ATTEMPT",
+        "RESERVE_SUCCESS",
+        "RESERVE_FAILED",
+        "ROLLBACK"
+    ]
+    stock_before: int
+    stock_after: int
+    timestamp: datetime.datetime
+
+
+async def write_ledger_event(
+    order_id: str,
+    sku: str,
+    qty: int,
+    event_type: str,
+    stock_before: int,
+    stock_after: int
+):
+    doc = {
+        "event_id": str(uuid.uuid4()),
+        "order_id": order_id,
+        "sku": sku,
+        "qty": qty,
+        "event_type": event_type,
+        "stock_before": stock_before,
+        "stock_after": stock_after,
+        "timestamp": datetime.datetime.utcnow()
+    }
+    await db.inventory_ledger.insert_one(doc)
+
+
 @app.on_event("startup")
 async def startup():
     global db_client, db
@@ -77,6 +114,7 @@ async def shutdown():
         logger.info("MongoDB connection closed")
 
 
+# Tool: Extended validate_stock_tool with ledger attempt
 async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState:
     logger.info(f'Calling validate_stock_tool ... \n Current State is {state}')
     print(f'Calling validate_stock_tool ... \n Current State is {state}')
@@ -86,7 +124,27 @@ async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState
 
     for item in state["items"]:
         doc = await db.inventory.find_one({"sku": item["sku"]})
-        if not doc or doc["stock"] < item["qty"]:
+        stock = doc["stock"] if doc else 0
+
+        await write_ledger_event(
+            order_id=state["order_id"],
+            sku=item["sku"],
+            qty=item["qty"],
+            event_type="RESERVE_ATTEMPT",
+            stock_before=stock,
+            stock_after=stock
+        )
+
+        if stock < item["qty"]:
+            await write_ledger_event(
+                order_id=state["order_id"],
+                sku=item["sku"],
+                qty=item["qty"],
+                event_type="RESERVE_FAILED",
+                stock_before=stock,
+                stock_after=stock
+            )
+
             state["action"] = "OUT_OF_STOCK"
             state["result"] = {
                 "order_id": state["order_id"],
@@ -104,6 +162,7 @@ async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState
     return state
 
 
+# Tool: Extended apply with ledger
 async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentState:
     logger.info(f'Calling apply_reservation_tool ... \n Current State is {state}')
     print(f'Calling apply_reservation_tool ... \n Current State is {state}')
@@ -112,20 +171,46 @@ async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentSt
     if state["atomic"]:
         with lock:
             for item in state["items"]:
+                doc = await db.inventory.find_one({"sku": item["sku"]})
+                before = doc["stock"]
+
                 res = await db.inventory.find_one_and_update(
                     {"sku": item["sku"]},
                     {"$inc": {"stock": -item["qty"]}},
                     return_document=ReturnDocument.AFTER
                 )
-                results.append({"sku": item["sku"], "remaining": res["stock"]})
+
+                after = res["stock"]
+
+                await write_ledger_event(
+                    state["order_id"],
+                    item["sku"],
+                    item["qty"],
+                    "RESERVE_SUCCESS",
+                    before,
+                    after
+                )
+
+                results.append({"sku": item["sku"], "remaining": after})
     else:
         for item in state["items"]:
             doc = await db.inventory.find_one({"sku": item["sku"]})
+            before = doc["stock"]
             new_stock = doc["stock"] - item["qty"]
             await db.inventory.update_one(
                 {"sku": item["sku"]},
                 {"$set": {"stock": new_stock}}
             )
+
+            await write_ledger_event(
+                state["order_id"],
+                item["sku"],
+                item["qty"],
+                "RESERVE_SUCCESS",
+                stock_before=before,
+                stock_after=new_stock
+            )
+
             results.append({"sku": item["sku"], "remaining": new_stock})
 
     state["result"] = {
@@ -139,6 +224,7 @@ async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentSt
     return state
 
 
+# Tool: Extend rollback with ledger
 async def rollback_reservation_tool(state: InventoryAgentState) -> InventoryAgentState:
     logger.info(f'Calling rollback_reservation_tool ... \n Current State is {state}')
     print(f'Calling rollback_reservation_tool ... \n Current State is {state}')
@@ -147,20 +233,46 @@ async def rollback_reservation_tool(state: InventoryAgentState) -> InventoryAgen
     if state["atomic"]:
         with lock:
             for item in state["items"]:
+                doc = await db.inventory.find_one({"sku": item["sku"]})
+                before = doc["stock"]
+
                 res = await db.inventory.find_one_and_update(
                     {"sku": item["sku"]},
                     {"$inc": {"stock": item["qty"]}},
                     return_document=ReturnDocument.AFTER
                 )
+
+                after = res["stock"]
+
+                await write_ledger_event(
+                    state["order_id"],
+                    item["sku"],
+                    item["qty"],
+                    "ROLLBACK",
+                    before,
+                    after
+                )
+
                 results.append({"sku": item["sku"], "remaining": res["stock"]})
     else:
         for item in state["items"]:
             doc = await db.inventory.find_one({"sku": item["sku"]})
+            before = doc["stock"]
             new_stock = doc["stock"] + item["qty"]
             await db.inventory.update_one(
                 {"sku": item["sku"]},
                 {"$set": {"stock": new_stock}}
             )
+
+            await write_ledger_event(
+                state["order_id"],
+                item["sku"],
+                item["qty"],
+                "ROLLBACK",
+                stock_before=before,
+                stock_after=new_stock
+            )
+
             results.append({"sku": item["sku"], "remaining": new_stock})
 
     state["result"] = {
