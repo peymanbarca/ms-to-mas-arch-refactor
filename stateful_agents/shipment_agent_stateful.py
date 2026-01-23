@@ -41,7 +41,7 @@ db = None
 class UserMemory(BaseModel):
     user_id: str
     summary: str
-    updated_at: datetime
+    updated_at: datetime.datetime
 
 class ShipmentRequest(BaseModel):
     order_id: str
@@ -140,8 +140,8 @@ async def plan_shipment_params(state: ShipmentState) -> ShipmentState:
     {memory_block}
 
     Task:
-    - Infer shipment preferences from memory if present
-    - If memory is missing, choose safe defaults
+    - Infer shipment preferences from summarized memory if present
+    - If memory is missing, try to infer preferences from user input, otherwise choose safe defaults
     - Return ONLY valid JSON matching the schema
 
     Defaults:

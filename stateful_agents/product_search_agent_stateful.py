@@ -21,14 +21,18 @@ import asyncio
 
 
 logger = logging.getLogger("product_search_agent")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    filename='logs/product_search_agent.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8008))
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:8002")
 
-llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
+llm = ChatOllama(model="qwen2", temperature=0.3, reasoning=False)
 
 app = FastAPI(title="Product Search Agent")
 
@@ -36,38 +40,60 @@ app = FastAPI(title="Product Search Agent")
 db_client: Optional[AsyncIOMotorClient] = None
 db = None
 
+
 class ProductOut(BaseModel):
     sku: str
     name: str
     description: str
 
+
 class ProductSearchResultItem(ProductOut):
     price: float
     score: float
+
 
 class ProductCreate(BaseModel):
     sku: str
     name: str
     description: str
 
+
 class ProductSearchResponse(BaseModel):
     query: str
+    search_filters: dict
     results: List[ProductSearchResultItem]
 
 
 class UserMemory(BaseModel):
     user_id: str
     summary: str
-    updated_at: datetime
+    updated_at: datetime.datetime
 
 
 class ProductSearchAgentState(TypedDict):
-    query: str
+    main_query: str
+    search_filters: Dict[str, Any]
     user_id: str
     memory_summary: Optional[str]
     candidates: List[Dict[str, Any]]
     prices: Dict[str, float]
     results: List[Dict[str, Any]]
+
+
+@app.on_event("startup")
+async def startup():
+    global db_client, db
+    db_client = AsyncIOMotorClient(MONGO_URI)
+    db = db_client[MONGO_DB]
+    logger.info("Connected to MongoDB at %s db=%s", MONGO_URI, MONGO_DB)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    global db_client
+    if db_client:
+        db_client.close()
+        logger.info("MongoDB connection closed")
 
 
 async def load_user_memory(user_id: str) -> Optional[str]:
@@ -78,14 +104,14 @@ async def load_user_memory(user_id: str) -> Optional[str]:
 async def save_user_memory(user_id: str, summary: str):
     await db.user_memory.update_one(
         {"user_id": user_id},
-        {"$set": {"summary": summary, "updated_at": datetime.utcnow()}},
+        {"$set": {"summary": summary, "updated_at": datetime.datetime.utcnow()}},
         upsert=True
     )
 
-async def load_memory_node(
-    state: ProductSearchAgentState
-) -> ProductSearchAgentState:
 
+async def load_memory_node(
+        state: ProductSearchAgentState
+) -> ProductSearchAgentState:
     user_id = state.get("user_id")
     if not user_id:
         state["memory_summary"] = None
@@ -97,42 +123,112 @@ async def load_memory_node(
 
 
 async def update_memory_node(
-    state: ProductSearchAgentState) -> ProductSearchAgentState:
-
+        state: ProductSearchAgentState) -> ProductSearchAgentState:
     user_id = state.get("user_id")
     if not user_id:
         return state
 
     interaction = f"""
-        User searched for: {state['query']}
-        Top results: {[r['name'] for r in state['results'][:3]]}
+        User searched for: {state['search_filters']}
+        Top results: {[f"description: {r['description']}, price={r['price']}, sku={r['sku']} " for r in state['results'][:3]]}
         """
 
     prompt = f"""
         You are a memory summarization agent.
-        
+
+        Tasks:
+        - Update the summary concisely about search preferences of user and top results in this format:
+        search preferences: SUMMARY_ABOUT_QUERY
+        top results: SUMMARY_OF_TOP_RESULTS
+
         Existing summary:
         {state.get("memory_summary", "None")}
-        
+
         New interaction:
         {interaction}
-        
-        Update the summary concisely.
+
         """
+
+    logger.info(f'update_memory_node -> LLM Call Prompt: {prompt}')
 
     response = await asyncio.to_thread(llm.invoke, prompt)
     new_summary = response.text().strip()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'update_memory_node -> LLM Raw response: {new_summary}')
+
+    logger.info(
+        f'update_memory_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+        f' total_tokens: {total_tokens}')
+    print(f'update_memory_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+          f' total_tokens: {total_tokens}')
 
     await save_user_memory(user_id, new_summary)
     return state
 
 
+async def infer_search_query(state: ProductSearchAgentState) -> ProductSearchAgentState:
+    memory_block = (
+        f"User preference summary:\n{state['memory_summary']}\n\n"
+        if state.get("memory_summary")
+        else ""
+    )
+
+    prompt = f"""
+     You are a product search inference agent.
+
+    {memory_block}
+
+    Task:
+    - Infer the search preferences from user raw query for parts only related to product name and pricing filter
+    - Exclude shipment and delivery preferences from search preferences, such as delivery speed, avoid or not weekend, within days of delivery
+    - Respect user preference summary if provided
+    - Return final result ONLY valid JSON with below schema:
+
+    Schema:
+    {{
+            "product_name": string,
+            "min_price": number,
+            "max_price": number
+    }}
+
+    User raw query:
+    {state.get("main_query")}
+
+    """
+
+    logger.info(f'infer_search_query -> LLM Call Prompt: {prompt}')
+
+    response = await asyncio.to_thread(llm.invoke, prompt)
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'infer_search_query -> LLM Raw response: {raw_response}')
+
+    logger.info(
+        f'infer_search_query -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+        f' total_tokens: {total_tokens}')
+    print(f'infer_search_query -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+          f' total_tokens: {total_tokens}')
+
+    try:
+        search_filters = parse_json_response(raw_response)
+    except Exception as e:
+        raise ValueError(f"Invalid result output: {raw_response}") from e
+
+    state["search_filters"] = search_filters
+    return state
+
+
 async def fetch_candidates_tool(state: ProductSearchAgentState) -> ProductSearchAgentState:
-    q = state["query"]
+    search_filters = state["search_filters"]
+    product_name = search_filters.get('product_name', '')
 
     # Prefer text search
     cursor = db.products.find(
-        {"$text": {"$search": q}},
+        {"$text": {"$search": product_name}},
         {"score": {"$meta": "textScore"}}
     ).sort([("score", {"$meta": "textScore"})]).limit(10)
 
@@ -141,7 +237,7 @@ async def fetch_candidates_tool(state: ProductSearchAgentState) -> ProductSearch
     # Fallback to regex (still deterministic DB logic)
     if not docs:
         docs = await db.products.find(
-            {"name": {"$regex": q, "$options": "i"}}
+            {"name": {"$regex": product_name, "$options": "i"}}
         ).limit(10).to_list(length=10)
 
     state["candidates"] = docs
@@ -172,21 +268,6 @@ async def fetch_prices_tool(state: ProductSearchAgentState) -> ProductSearchAgen
     state["prices"] = prices
     return state
 
-@app.on_event("startup")
-async def startup():
-    global db_client, db
-    db_client = AsyncIOMotorClient(MONGO_URI)
-    db = db_client[MONGO_DB]
-    logger.info("Connected to MongoDB at %s db=%s", MONGO_URI, MONGO_DB)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    global db_client
-    if db_client:
-        db_client.close()
-        logger.info("MongoDB connection closed")
-
 
 def parse_json_response(text: str):
     import re
@@ -200,78 +281,107 @@ def parse_json_response(text: str):
         return None
 
 
-async def ranking_node(state: ProductSearchAgentState) -> ProductSearchAgentState:
-    products = [
-        {
-            "sku": d["sku"],
-            "name": d["name"],
-            "description": d.get("description", ""),
-            "db_score": d.get("score", 1.0)
-        }
-        for d in state["candidates"]
-    ]
+# async def ranking_node(state: ProductSearchAgentState) -> ProductSearchAgentState:
+#     products = [
+#         {
+#             "sku": d["sku"],
+#             "name": d["name"],
+#             "description": d.get("description", ""),
+#             "db_score": d.get("score", 1.0)
+#         }
+#         for d in state["candidates"]
+#     ]
+#
+#     prices = state["prices"]
+#
+#     memory_block = (
+#         f"User preference summary:\n{state['memory_summary']}\n\n"
+#         if state.get("memory_summary")
+#         else ""
+#     )
+#
+#     prompt = f"""
+#     You are a product search ranking agent.
+#
+#     Task:
+#     - Fill the final result by matching each product and price by sku from the Prices and Products input
+#     - Respect user search preferences if provided
+#     - Return final result ONLY valid JSON with below schema:
+#
+#     {memory_block}
+#
+#     Schema:
+#     {{
+#         "results": [
+#           {{
+#             "sku": string,
+#             "name": string,
+#             "description": string,
+#             "price": number,
+#             "score": number
+#           }}
+#         ]
+#     }}
+#
+#
+#     Prices:
+#     {prices}
+#
+#     Products:
+#     {json.dumps(products, indent=2)}
+#     """
+#
+#     logger.info(f'ranking_node -> LLM Call Prompt: {prompt}')
+#     response = await asyncio.to_thread(llm.invoke, prompt)
+#
+#     raw_response = response.text()
+#     input_tokens = response.usage_metadata.get("input_tokens")
+#     output_tokens = response.usage_metadata.get("output_tokens")
+#     total_tokens = response.usage_metadata.get("total_tokens")
+#     logger.info(f'ranking_node -> LLM Raw response: {raw_response}')
+#
+#     logger.info(f'ranking_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+#                 f' total_tokens: {total_tokens}')
+#     print(f'ranking_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+#           f' total_tokens: {total_tokens}')
+#
+#     try:
+#         results = parse_json_response(raw_response)
+#         assert isinstance(results["results"], list)
+#     except Exception as e:
+#         raise ValueError(f"Invalid result output: {raw_response}") from e
+#
+#     state["results"] = results["results"]
+#     return state
 
-    prices = state["prices"]
 
-    memory_block = (
-        f"User preference summary:\n{state['memory_summary']}\n\n"
-        if state.get("memory_summary")
-        else ""
-    )
+def assemble_response_tool(state: ProductSearchAgentState) -> ProductSearchAgentState:
+    prices = state.get("prices", {})
+    candidates = state.get("candidates", {})
 
-    prompt = f"""
-    You are a product search ranking agent.
-    
-    Task:
-    - Fill the final result by matching each product and price by sku from the Prices and Products input  
-    - Respect user preferences if provided
-    - Return final result ONLY valid JSON with below schema:
-    
-    {memory_block}
-    
-    Schema:
-    {{
-        "results": [
-          {{
-            "sku": string,
-            "name": string,
-            "description": string,
-            "price": number,
-            "score": number
-          }}
-        ]
-    }}
+    search_filters = state["search_filters"]
+    min_price = search_filters.get('min_price', 0)
+    max_price = search_filters.get('max_price', 1000000)
+    if min_price is None:
+        min_price = 0
+    if max_price is None:
+        max_price = 1000000
 
-    
-    Prices:
-    {prices}
-    
-    Products:
-    {json.dumps(products, indent=2)}
-    """
+    results = []
+    for i in range(len(candidates)):
+        # Apply price filtering
+        price = prices.get(candidates[i]["sku"])
+        if price is None or price < min_price or price > max_price:
+            continue
+        results.append({
+            "sku": candidates[i]["sku"],
+            "name": candidates[i]["name"],
+            "description": candidates[i].get("description", ""),
+            "price": prices.get(candidates[i]["sku"]),
+            "score": float(candidates[i]["score"])
+        })
 
-    logger.info(f'LLM Call Prompt: {prompt}')
-    response = await asyncio.to_thread(llm.invoke, prompt)
-
-    raw_response = response.text()
-    input_tokens = response.usage_metadata.get("input_tokens")
-    output_tokens = response.usage_metadata.get("output_tokens")
-    total_tokens = response.usage_metadata.get("total_tokens")
-    logger.info(f'LLM Raw response: {raw_response}')
-    print(f'LLM Raw response: {raw_response}')
-
-    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-                f' total_tokens: {total_tokens}')
-    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-                f' total_tokens: {total_tokens}')
-
-    try:
-        results = parse_json_response(raw_response)
-        assert isinstance(results["results"], list)
-    except Exception as e:
-        raise ValueError(f"Invalid result output: {raw_response}") from e
-
-    state["results"] = results["results"]
+    state["results"] = results
     return state
 
 
@@ -279,16 +389,19 @@ def build_product_search_agent():
     graph = StateGraph(ProductSearchAgentState)
 
     graph.add_node("load_memory", load_memory_node)
+    graph.add_node("infer_search_query", infer_search_query)
     graph.add_node("fetch_candidates", fetch_candidates_tool)
     graph.add_node("fetch_prices", fetch_prices_tool)
-    graph.add_node("rank", ranking_node)
+    # graph.add_node("rank", ranking_node)
+    graph.add_node("assemble_response", assemble_response_tool)
     graph.add_node("update_memory", update_memory_node)
 
     graph.set_entry_point("load_memory")
-    graph.add_edge("load_memory", "fetch_candidates")
+    graph.add_edge("load_memory", "infer_search_query")
+    graph.add_edge("infer_search_query", "fetch_candidates")
     graph.add_edge("fetch_candidates", "fetch_prices")
-    graph.add_edge("fetch_prices", "rank")
-    graph.add_edge("rank", "update_memory")
+    graph.add_edge("fetch_prices", "assemble_response")
+    graph.add_edge("assemble_response", "update_memory")
     graph.add_edge("update_memory", END)
 
     return graph.compile()
@@ -302,10 +415,11 @@ async def create_product(p: ProductCreate):
     await db.products.insert_one(p.dict())
     return {"status": "created", "sku": p.sku}
 
+
 @app.get("/search", response_model=ProductSearchResponse)
 async def search_products(q: str = Query(...), user_id: Optional[str] = Query(None), limit: int = 5):
     state = {
-        "query": q,
+        "main_query": q,
         "user_id": user_id,
         "candidates": [],
         "prices": {},
@@ -317,6 +431,7 @@ async def search_products(q: str = Query(...), user_id: Optional[str] = Query(No
         print(f'------------\n {out}')
         return ProductSearchResponse(
             query=q,
+            search_filters=out["search_filters"],
             results=out["results"][:limit]
         )
     except Exception as e:

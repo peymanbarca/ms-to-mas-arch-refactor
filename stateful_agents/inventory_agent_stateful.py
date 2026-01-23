@@ -25,7 +25,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
 )
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8001))
 
@@ -76,7 +76,7 @@ class LedgerEvent(BaseModel):
     event_type: Literal[
         "PENDING",
         "COMMITTED",
-        "FAILED",
+        "OUT_OF_STOCK",
         "ROLLBACK"
     ]
     stock_before: int
@@ -170,7 +170,7 @@ async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState
                 order_id=state["order_id"],
                 sku=item["sku"],
                 qty=item["qty"],
-                event_type="FAILED",
+                event_type="OUT_OF_STOCK",
                 stock_before=stock,
                 stock_after=stock
             )
