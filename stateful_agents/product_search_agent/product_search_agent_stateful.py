@@ -16,13 +16,13 @@ from langgraph.graph import StateGraph, END
 import asyncio
 
 ######################
-# [load_memory] → fetch_candidates → fetch_prices → rank → [update_memory] → END
+# [load_memory] → Inference search filters → fetch_candidates_tool → fetch_prices_tool → assemble_tool → [update_memory] → END
 #######################
 
 
 logger = logging.getLogger("product_search_agent")
 logging.basicConfig(
-    filename='logs/product_search_agent.log',
+    filename='../logs/product_search_agent.log',
     level=logging.INFO,  # Log all messages with severity DEBUG or higher
     format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
 )
@@ -32,7 +32,7 @@ MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8008))
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:8002")
 
-llm = ChatOllama(model="qwen2", temperature=0.3, reasoning=False)
+llm = ChatOllama(model="llama3", temperature=0.2, reasoning=False)
 
 app = FastAPI(title="Product Search Agent")
 
@@ -60,21 +60,24 @@ class ProductCreate(BaseModel):
 
 class ProductSearchResponse(BaseModel):
     query: str
+    previous_memory: Optional[str]
+    current_memory: Optional[str]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
     search_filters: dict
     results: List[ProductSearchResultItem]
-
-
-class UserMemory(BaseModel):
-    user_id: str
-    summary: str
-    updated_at: datetime.datetime
 
 
 class ProductSearchAgentState(TypedDict):
     main_query: str
     search_filters: Dict[str, Any]
     user_id: str
-    memory_summary: Optional[str]
+    previous_memory_summary: Optional[str]
+    current_memory_summary: Optional[str]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
     candidates: List[Dict[str, Any]]
     prices: Dict[str, float]
     results: List[Dict[str, Any]]
@@ -97,14 +100,18 @@ async def shutdown():
 
 
 async def load_user_memory(user_id: str) -> Optional[str]:
-    doc = await db.user_memory.find_one({"user_id": user_id})
+    doc = await db.user_memory.find_one({"user_id": user_id, "type": "search_preferences"})
     return doc["summary"] if doc else None
+
+
+async def delete_user_memory(user_id: str):
+    await db.user_memory.delete_many({"user_id": user_id, "type": "search_preferences"})
 
 
 async def save_user_memory(user_id: str, summary: str):
     await db.user_memory.update_one(
         {"user_id": user_id},
-        {"$set": {"summary": summary, "updated_at": datetime.datetime.utcnow()}},
+        {"$set": {"summary": summary, "type": "search_preferences", "updated_at": datetime.datetime.utcnow()}},
         upsert=True
     )
 
@@ -114,11 +121,11 @@ async def load_memory_node(
 ) -> ProductSearchAgentState:
     user_id = state.get("user_id")
     if not user_id:
-        state["memory_summary"] = None
+        state["previous_memory_summary"] = None
         return state
 
     summary = await load_user_memory(user_id)
-    state["memory_summary"] = summary
+    state["previous_memory_summary"] = summary
     return state
 
 
@@ -126,23 +133,27 @@ async def update_memory_node(
         state: ProductSearchAgentState) -> ProductSearchAgentState:
     user_id = state.get("user_id")
     if not user_id:
+        state["current_memory_summary"] = None
         return state
+
+    # interaction = f"""
+    #     User searched for: {state['search_filters']}
+    #     Top results: {[f"description: {r['description']}, price={r['price']}, sku={r['sku']} " for r in state['results'][:3]]}
+    #     """
 
     interaction = f"""
         User searched for: {state['search_filters']}
-        Top results: {[f"description: {r['description']}, price={r['price']}, sku={r['sku']} " for r in state['results'][:3]]}
         """
 
     prompt = f"""
         You are a memory summarization agent.
 
         Tasks:
-        - Update the summary concisely about search preferences of user and top results in this format:
-        search preferences: SUMMARY_ABOUT_QUERY
-        top results: SUMMARY_OF_TOP_RESULTS
+        - Update the existing summary concisely about search preferences of user with new interaction
+        - Return only text of updated summary without any additional prefix or suffix
 
         Existing summary:
-        {state.get("memory_summary", "None")}
+        {state.get("previous_memory_summary", "None")}
 
         New interaction:
         {interaction}
@@ -164,37 +175,40 @@ async def update_memory_node(
     print(f'update_memory_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
           f' total_tokens: {total_tokens}')
 
+    state["current_memory_summary"] = new_summary
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     await save_user_memory(user_id, new_summary)
     return state
 
 
 async def infer_search_query(state: ProductSearchAgentState) -> ProductSearchAgentState:
     memory_block = (
-        f"User preference summary:\n{state['memory_summary']}\n\n"
-        if state.get("memory_summary")
+        f"User preference summary:\n{state['previous_memory_summary']}\n\n"
+        if state.get("previous_memory_summary")
         else ""
     )
 
     prompt = f"""
      You are a product search inference agent.
 
-    {memory_block}
-
     Task:
-    - Infer the search preferences from user raw query for parts only related to product name and pricing filter
-    - Exclude shipment and delivery preferences from search preferences, such as delivery speed, avoid or not weekend, within days of delivery
+    - Infer the search preferences from user raw query for parts only related to product name / description and pricing filter
     - Respect user preference summary if provided
-    - Return final result ONLY valid JSON with below schema:
+    - Return only a JSON with below schema without intermediate reasoning and analysis text:
 
     Schema:
     {{
-            "product_name": string,
+            "product": string,
             "min_price": number,
             "max_price": number
     }}
 
     User raw query:
     {state.get("main_query")}
+    
+    {memory_block}
 
     """
 
@@ -219,16 +233,19 @@ async def infer_search_query(state: ProductSearchAgentState) -> ProductSearchAge
         raise ValueError(f"Invalid result output: {raw_response}") from e
 
     state["search_filters"] = search_filters
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     return state
 
 
 async def fetch_candidates_tool(state: ProductSearchAgentState) -> ProductSearchAgentState:
     search_filters = state["search_filters"]
-    product_name = search_filters.get('product_name', '')
+    product = search_filters.get('product', '')
 
     # Prefer text search
     cursor = db.products.find(
-        {"$text": {"$search": product_name}},
+        {"$text": {"$search": product}},
         {"score": {"$meta": "textScore"}}
     ).sort([("score", {"$meta": "textScore"})]).limit(10)
 
@@ -237,7 +254,7 @@ async def fetch_candidates_tool(state: ProductSearchAgentState) -> ProductSearch
     # Fallback to regex (still deterministic DB logic)
     if not docs:
         docs = await db.products.find(
-            {"name": {"$regex": product_name, "$options": "i"}}
+            {"name": {"$regex": product, "$options": "i"}}
         ).limit(10).to_list(length=10)
 
     state["candidates"] = docs
@@ -279,80 +296,6 @@ def parse_json_response(text: str):
     except Exception as e:
         logging.error(f"parse error: {e} -- {text}")
         return None
-
-
-# async def ranking_node(state: ProductSearchAgentState) -> ProductSearchAgentState:
-#     products = [
-#         {
-#             "sku": d["sku"],
-#             "name": d["name"],
-#             "description": d.get("description", ""),
-#             "db_score": d.get("score", 1.0)
-#         }
-#         for d in state["candidates"]
-#     ]
-#
-#     prices = state["prices"]
-#
-#     memory_block = (
-#         f"User preference summary:\n{state['memory_summary']}\n\n"
-#         if state.get("memory_summary")
-#         else ""
-#     )
-#
-#     prompt = f"""
-#     You are a product search ranking agent.
-#
-#     Task:
-#     - Fill the final result by matching each product and price by sku from the Prices and Products input
-#     - Respect user search preferences if provided
-#     - Return final result ONLY valid JSON with below schema:
-#
-#     {memory_block}
-#
-#     Schema:
-#     {{
-#         "results": [
-#           {{
-#             "sku": string,
-#             "name": string,
-#             "description": string,
-#             "price": number,
-#             "score": number
-#           }}
-#         ]
-#     }}
-#
-#
-#     Prices:
-#     {prices}
-#
-#     Products:
-#     {json.dumps(products, indent=2)}
-#     """
-#
-#     logger.info(f'ranking_node -> LLM Call Prompt: {prompt}')
-#     response = await asyncio.to_thread(llm.invoke, prompt)
-#
-#     raw_response = response.text()
-#     input_tokens = response.usage_metadata.get("input_tokens")
-#     output_tokens = response.usage_metadata.get("output_tokens")
-#     total_tokens = response.usage_metadata.get("total_tokens")
-#     logger.info(f'ranking_node -> LLM Raw response: {raw_response}')
-#
-#     logger.info(f'ranking_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-#                 f' total_tokens: {total_tokens}')
-#     print(f'ranking_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-#           f' total_tokens: {total_tokens}')
-#
-#     try:
-#         results = parse_json_response(raw_response)
-#         assert isinstance(results["results"], list)
-#     except Exception as e:
-#         raise ValueError(f"Invalid result output: {raw_response}") from e
-#
-#     state["results"] = results["results"]
-#     return state
 
 
 def assemble_response_tool(state: ProductSearchAgentState) -> ProductSearchAgentState:
@@ -416,23 +359,40 @@ async def create_product(p: ProductCreate):
     return {"status": "created", "sku": p.sku}
 
 
+@app.delete("/delete_memory")
+async def delete_memory(user_id: str):
+    await delete_user_memory(user_id)
+    return {"status": "memory_deleted", "user_id": user_id}
+
+
 @app.get("/search", response_model=ProductSearchResponse)
 async def search_products(q: str = Query(...), user_id: Optional[str] = Query(None), limit: int = 5):
     state = {
         "main_query": q,
         "user_id": user_id,
         "candidates": [],
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_llm_calls": 0,
         "prices": {},
         "results": []
     }
+
+    logger.info(f"Input request prompt {q}")
 
     try:
         out = await search_graph.ainvoke(state)
         print(f'------------\n {out}')
         return ProductSearchResponse(
             query=q,
+            previous_memory=out["previous_memory_summary"],
+            current_memory=out["current_memory_summary"],
+            total_input_tokens=out["total_input_tokens"],
+            total_output_tokens=out["total_output_tokens"],
+            total_llm_calls=out["total_llm_calls"],
             search_filters=out["search_filters"],
             results=out["results"][:limit]
         )
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
