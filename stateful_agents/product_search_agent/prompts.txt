@@ -18,14 +18,3 @@ Product Search Agent
 
 #######################################################################################
 
-
-Shipment Search Agent
-
-1. single-turn explicit
-
-2. single-turn vague
-
-3. multi-turn completing
-
-
-4. multi-turn conflicting

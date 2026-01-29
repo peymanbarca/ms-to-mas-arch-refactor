@@ -129,6 +129,66 @@ async def load_memory_node(
     return state
 
 
+async def infer_search_query(state: ProductSearchAgentState) -> ProductSearchAgentState:
+    memory_block = (
+        f"User preference summary:\n{state['previous_memory_summary']}\n\n"
+        if state.get("previous_memory_summary")
+        else ""
+    )
+
+    prompt = f"""
+     You are a product search inference agent.
+
+    Task:
+    - Infer the search preferences from user raw query for parts only related to product name / description and pricing filter
+    - Respect user preference summary if provided
+    - Return only a JSON with below schema without intermediate reasoning and analysis text:
+
+    Schema:
+    {{
+            "product": string,
+            "min_price": number,
+            "max_price": number
+    }}
+
+    User raw query:
+    {state.get("main_query")}
+    
+    {memory_block}
+
+    """
+
+    logger.info(f'infer_search_query -> LLM Call Prompt: {prompt}')
+
+    st = time.time()
+    response = await asyncio.to_thread(llm.invoke, prompt)
+    raw_response = response.text()
+    et = time.time()
+
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    logger.info(f'infer_search_query -> LLM Raw response: {raw_response}')
+
+    logger.info(
+        f'infer_search_query -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+        f' total_tokens: {total_tokens}, Took: f{round((et-st), 3)}')
+    print(f'infer_search_query -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+          f' total_tokens: {total_tokens}, Took: f{round((et-st), 3)}')
+
+    try:
+        search_filters = parse_json_response(raw_response)
+    except Exception as e:
+        raise ValueError(f"Invalid result output: {raw_response}") from e
+
+    state["search_filters"] = search_filters
+
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
+    return state
+
+
 async def update_memory_node(
         state: ProductSearchAgentState) -> ProductSearchAgentState:
     user_id = state.get("user_id")
@@ -162,8 +222,11 @@ async def update_memory_node(
 
     logger.info(f'update_memory_node -> LLM Call Prompt: {prompt}')
 
+    st = time.time()
     response = await asyncio.to_thread(llm.invoke, prompt)
     new_summary = response.text().strip()
+    et = time.time()
+
     input_tokens = response.usage_metadata.get("input_tokens")
     output_tokens = response.usage_metadata.get("output_tokens")
     total_tokens = response.usage_metadata.get("total_tokens")
@@ -171,71 +234,15 @@ async def update_memory_node(
 
     logger.info(
         f'update_memory_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-        f' total_tokens: {total_tokens}')
+        f' total_tokens: {total_tokens}, Took: f{round((et-st), 3)}')
     print(f'update_memory_node -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-          f' total_tokens: {total_tokens}')
+          f' total_tokens: {total_tokens}, Took: f{round((et-st), 3)}')
 
     state["current_memory_summary"] = new_summary
     state["total_input_tokens"] += input_tokens
     state["total_output_tokens"] += output_tokens
     state["total_llm_calls"] += 1
     await save_user_memory(user_id, new_summary)
-    return state
-
-
-async def infer_search_query(state: ProductSearchAgentState) -> ProductSearchAgentState:
-    memory_block = (
-        f"User preference summary:\n{state['previous_memory_summary']}\n\n"
-        if state.get("previous_memory_summary")
-        else ""
-    )
-
-    prompt = f"""
-     You are a product search inference agent.
-
-    Task:
-    - Infer the search preferences from user raw query for parts only related to product name / description and pricing filter
-    - Respect user preference summary if provided
-    - Return only a JSON with below schema without intermediate reasoning and analysis text:
-
-    Schema:
-    {{
-            "product": string,
-            "min_price": number,
-            "max_price": number
-    }}
-
-    User raw query:
-    {state.get("main_query")}
-    
-    {memory_block}
-
-    """
-
-    logger.info(f'infer_search_query -> LLM Call Prompt: {prompt}')
-
-    response = await asyncio.to_thread(llm.invoke, prompt)
-    raw_response = response.text()
-    input_tokens = response.usage_metadata.get("input_tokens")
-    output_tokens = response.usage_metadata.get("output_tokens")
-    total_tokens = response.usage_metadata.get("total_tokens")
-    logger.info(f'infer_search_query -> LLM Raw response: {raw_response}')
-
-    logger.info(
-        f'infer_search_query -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-        f' total_tokens: {total_tokens}')
-    print(f'infer_search_query -> LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
-          f' total_tokens: {total_tokens}')
-
-    try:
-        search_filters = parse_json_response(raw_response)
-    except Exception as e:
-        raise ValueError(f"Invalid result output: {raw_response}") from e
-
-    state["search_filters"] = search_filters
-    state["total_input_tokens"] += input_tokens
-    state["total_output_tokens"] += output_tokens
-    state["total_llm_calls"] += 1
     return state
 
 
@@ -335,7 +342,6 @@ def build_product_search_agent():
     graph.add_node("infer_search_query", infer_search_query)
     graph.add_node("fetch_candidates", fetch_candidates_tool)
     graph.add_node("fetch_prices", fetch_prices_tool)
-    # graph.add_node("rank", ranking_node)
     graph.add_node("assemble_response", assemble_response_tool)
     graph.add_node("update_memory", update_memory_node)
 

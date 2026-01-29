@@ -3,21 +3,20 @@ import httpx
 import json
 from collections import Counter
 from typing import Dict, List, Optional
-import urllib.parse
 import time
 import requests
 from thefuzz import fuzz
 
-SEARCH_URL = "http://localhost:8008/search"
-DELETE_MEMORY_URL = "http://localhost:8008/delete_memory"
+BOOK_URL = "http://localhost:8006/book"
+DELETE_MEMORY_URL = "http://localhost:8006/delete_memory"
 N_RUNS = 2
 
-logs = ['../logs/product_search_agent.log']
+logs = ['../logs/shipment_agent.log']
 for log in logs:
     with open(file=log, mode='w') as f:
         f.write('')
 
-report_file = "results/product_search_agent_stateful.txt"
+report_file = "results/shipment_agent_stateful.txt"
 with open(report_file, "w") as f:
     f.write("")
 
@@ -32,19 +31,18 @@ async def run_trials(
     async with httpx.AsyncClient(timeout=10.0) as client:
         for i in range(N_RUNS):
             st = time.time()
-            params = {
-                "q": urllib.parse.quote_plus(prompt),
-            }
+            params = {}
             if stateless is False:
                 params["user_id"] = user_id
+            body = {"order_id": "order_123", "address": "210, NW6866 kings street", "main_query": prompt}
 
-            r = await client.get(SEARCH_URL, params=params)
+            r = await client.post(BOOK_URL, params=params, json=body)
             r.raise_for_status()
             et = time.time()
             data = r.json()
 
             results.append({
-                "filters": data["search_filters"],
+                "filters": data["shipment_prefs"],
                 "previous_memory": data["previous_memory"],
                 "current_memory": data["current_memory"],
                 "total_input_tokens": data["total_input_tokens"],
@@ -57,20 +55,27 @@ async def run_trials(
 
 
 def filters_match(pred, gt):
-    product_match = fuzz.ratio(str(pred.get("product")).lower(), str(gt.get("product")).lower()) > 85
-    if pred.get("min_price") == 0:
-        pred["min_price"] = None
-    if gt.get("min_price") == 0:
-        gt["min_price"] = None
-    min_price_match = pred.get("min_price") == gt.get("min_price")
-    max_price_match = pred.get("max_price") == gt.get("max_price")
+    speed_match = fuzz.ratio(str(pred.get("speed")).lower(), str(gt.get("speed")).lower()) > 95
+    if pred.get("eco_friendly") is None:
+        pred["eco_friendly"] = False
+    eco_friendly_match = pred.get("eco_friendly") == gt.get("eco_friendly")
+    avoid_weekend_delivery_match = pred.get("avoid_weekend_delivery") == gt.get("avoid_weekend_delivery")
+    if pred.get("preferred_carrier") and gt.get("preferred_carrier"):
+        preferred_carrier_match = fuzz.ratio(str(pred.get("preferred_carrier")).lower(),
+                                             str(gt.get("preferred_carrier")).lower()) > 95
+    elif pred.get("preferred_carrier") and gt.get("preferred_carrier") is not None:
+        preferred_carrier_match = False
+    else:
+        preferred_carrier_match = True
 
     return (
-        product_match
+        speed_match
         and
-        min_price_match
+        eco_friendly_match
         and
-        max_price_match
+        avoid_weekend_delivery_match
+        and
+        preferred_carrier_match
     )
 
 
@@ -83,9 +88,15 @@ def compute_PAR(trials, ground_truth):
 
 
 def normalize_filters(f, gt):
-    product_match = fuzz.ratio(str(f.get("product")).lower(), str(gt.get("product")).lower()) > 85
+    product_match = fuzz.ratio(str(f.get("speed")).lower(), str(gt.get("speed")).lower()) > 95
     if product_match:
-        f["product"] = str(gt.get("product")).lower()
+        f["speed"] = str(gt.get("speed")).lower()
+    if f.get("preferred_carrier") and gt.get("preferred_carrier"):
+        preferred_carrier_match = fuzz.ratio(str(f.get("preferred_carrier")).lower(),
+                                             str(gt.get("preferred_carrier")).lower()) > 95
+        if preferred_carrier_match:
+            f["preferred_carrier"] = str(gt.get("preferred_carrier")).lower()
+
     return json.dumps(f, sort_keys=True)
 
 
@@ -133,11 +144,12 @@ async def run_experiment(prompt, gt, user_id):
 
 async def main():
 
-    sample_prompt = "looking for noise cancelling white headphone under 300$"
+    sample_prompt = "Please ship this between Monday to Wednesday with the cheapest shipping option available."
     sample_gt = {
-        "product": "noise cancelling white headphone",
-        "min_price": None,
-        "max_price": 300
+        "speed": "cheapest",
+        "eco_friendly": False,
+        "avoid_weekend_delivery": True,
+        "preferred_carrier": None
     }
     user_id = 123
 
