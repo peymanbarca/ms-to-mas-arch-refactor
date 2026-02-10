@@ -11,6 +11,9 @@ print(f'qa_avg_ranked_sum = {np.sum(qa_avg_ranked)} , qa_avg_ranked_sum_avg = {n
 print(f'qa_avg_random_sum = {np.sum(qa_avg_random)} , qa_avg_random_sum_avg = {np.average(qa_avg_random)}')
 print(f'qa_avg_reverse_sum = {np.sum(qa_avg_reverse)} , qa_avg_reverse_sum_avg = {np.average(qa_avg_reverse)}')
 
+print(f'qa_ranked_rev_improve = { (np.sum(qa_avg_reverse) -  np.sum(qa_avg_ranked)) / np.sum(qa_avg_reverse)}')
+print(f'qa_ranked_rand_improve = { (np.sum(qa_avg_random) -  np.sum(qa_avg_ranked)) / np.sum(qa_avg_random)}')
+
 # ------------ latency ---------
 print('\n\n\n')
 
@@ -22,3 +25,6 @@ qa_avg_reverse = [0.473, 0.800, 1.541, 1.210, 1.089, 1.233, 2.444, 1.420, 1.636]
 print(f'qa_avg_ranked_sum = {np.sum(qa_avg_ranked)} , qa_avg_ranked_sum_avg = {np.average(qa_avg_ranked)}')
 print(f'qa_avg_random_sum = {np.sum(qa_avg_random)} , qa_avg_random_sum_avg = {np.average(qa_avg_random)}')
 print(f'qa_avg_reverse_sum = {np.sum(qa_avg_reverse)} , qa_avg_reverse_sum_avg = {np.average(qa_avg_reverse)}')
+
+print(f'qa_ranked_rev_improve = { (np.sum(qa_avg_reverse) -  np.sum(qa_avg_ranked)) / np.sum(qa_avg_reverse)}')
+print(f'qa_ranked_rand_improve = { (np.sum(qa_avg_random) -  np.sum(qa_avg_ranked)) / np.sum(qa_avg_random)}')
