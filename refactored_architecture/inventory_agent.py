@@ -56,6 +56,8 @@ class ReservationReq(BaseModel):
 class InventoryAgentState(TypedDict):
     order_id: str
     items: List[Dict[str, int]]
+    current_stock: Optional[int]
+    qty: Optional[int]
     atomic: bool
     action: str
     result: Optional[Dict[str, Any]]
@@ -80,31 +82,25 @@ async def shutdown():
         logger.info("MongoDB connection closed")
 
 
-async def validate_stock_tool(state: InventoryAgentState) -> InventoryAgentState:
-    logger.info(f'Calling validate_stock_tool ... \n Current State is {state}')
-    print(f'Calling validate_stock_tool ... \n Current State is {state}')
+async def fetch_stock_tool(state: InventoryAgentState) -> InventoryAgentState:
+    logger.info(f'Calling fetch_stock_tool ... \n Current State is {state}')
+    print(f'Calling fetch_stock_tool ... \n Current State is {state}')
 
     if state["action"] == 'ROLLBACK':
         return state
 
+    # currently working for single item, can be extended to support multiple items in the future
     for item in state["items"]:
         doc = await db.inventory.find_one({"sku": item["sku"]})
-        if not doc or doc["stock"] < item["qty"]:
-            state["action"] = "OUT_OF_STOCK"
-            state["result"] = {
-                "order_id": state["order_id"],
-                "status": "OUT_OF_STOCK",
-                "failed_sku": item["sku"]
-            }
-            logger.info(f'Response state of validate_stock_tool tool ==> {state}, \n-------------------------------------')
-            print(f'Response state of validate_stock_tool tool ==> {state}, \n-------------------------------------')
-            return state
+        state["current_stock"] = doc["stock"] if doc else 0
+        state["qty"] = item["qty"]
 
-    state["action"] = "RESERVABLE"
+    state["action"] = "TRY_RESERVE"
 
-    logger.info(f'Response state of validate_stock_tool ==> {state}, \n-------------------------------------')
-    print(f'Response state of validate_stock_tool ==> {state}, \n-------------------------------------')
+    logger.info(f'Response state of fetch_stock_tool tool ==> {state}, \n-------------------------------------')
+    print(f'Response state of fetch_stock_tool tool ==> {state}, \n-------------------------------------')
     return state
+
 
 
 async def apply_reservation_tool(state: InventoryAgentState) -> InventoryAgentState:
@@ -188,27 +184,21 @@ def parse_json_response(text: str):
         return None
 
 
-async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
+async def reasoning_action_node(state: InventoryAgentState) -> InventoryAgentState:
     prompt = f"""
-    You are an inventory reservation agent.
+    You are an inventory workflow manager agent.
     
     Task: 
     - If Action input is None or null, respond:
-        {{"decision": "VALIDATE_STOCK"}}
-        
-    - If Action input is RESERVABLE, respond:
-        {{"decision": "APPLY_RESERVE"}}
+        {{"decision": "FETCH_STOCK"}}
     
-    - else if Action input is OUT_OF_STOCK, respond:
-        {{"decision": "OUT_OF_STOCK"}}
-    
-    - else if Action input is ROLLBACK, respond:
+    - Else if Action input is ROLLBACK, respond:
         {{"decision": "ROLLBACK_RESERVE"}}
 
     Input:
     Action: {state["action"]}
     
-    Return ONLY valid JSON.
+    Return ONLY valid JSON without intermediate thinking responses.
     """
 
     logger.info(f'LLM Call Prompt: {prompt}')
@@ -239,28 +229,80 @@ async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
     return state
 
 
+async def reasoning_reserve_node(state: InventoryAgentState) -> InventoryAgentState:
+    prompt = f"""
+    You are an inventory reservation agent.
+
+    Task:    
+        - If CURRENT_STOCK > QTY , respond {{"decision": "APPLY_RESERVE"}}
+        - Else If CURRENT_STOCK == QTY , respond {{"decision": "APPLY_RESERVE"}}
+        - Else respond {{"decision": "OUT_OF_STOCK"}}
+
+    Input:
+    CURRENT_STOCK: {state["current_stock"]}
+    QTY: {state["qty"]}
+
+    Return ONLY valid JSON without intermediate thinking responses.
+    """
+
+    logger.info(f'LLM Call Prompt: {prompt}')
+    response = await asyncio.to_thread(llm.invoke, prompt)
+
+    raw_response = response.text()
+    input_tokens = response.usage_metadata.get("input_tokens")
+    output_tokens = response.usage_metadata.get("output_tokens")
+    total_tokens = response.usage_metadata.get("total_tokens")
+    reasoning_text = response.additional_kwargs.get("reasoning_content", None)
+    reasoning_tokens = response.usage_metadata.get("output_token_details", {}).get("reasoning", 0)
+
+    print(f'LLM Reasoning Text: {reasoning_text}')
+    logger.info(f'LLM Raw response: {raw_response}')
+    print(f'LLM Raw response: {raw_response}')
+
+    logger.info(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+                f' reasoning_tokens: {reasoning_tokens}, total_tokens: {total_tokens}')
+    print(f'LLM Token Metrics: input_tokens: {input_tokens}, output_tokens: {output_tokens},'
+          f' reasoning_tokens: {reasoning_tokens}, total_tokens: {total_tokens}')
+
+    decision = parse_json_response(raw_response).get("decision", "OUT_OF_STOCK")
+
+    state["action"] = decision
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
+    return state
+
+
 def build_inventory_agent():
     g = StateGraph(InventoryAgentState)
 
-    g.add_node("reason", reasoning_node)
-    g.add_node("validate", validate_stock_tool)
+    g.add_node("reason_action", reasoning_action_node)
+    g.add_node("reason_reserve", reasoning_reserve_node)
+    g.add_node("fetch", fetch_stock_tool)
     g.add_node("apply", apply_reservation_tool)
     g.add_node("rollback", rollback_reservation_tool)
 
-    g.set_entry_point("reason")
+    g.set_entry_point("reason_action")
 
     g.add_conditional_edges(
-        "reason",
+        "reason_action",
         lambda s: s["action"],
         {
-            "VALIDATE_STOCK": "validate",
+            "FETCH_STOCK": "fetch",
+            "ROLLBACK_RESERVE": "rollback"
+        }
+    )
+
+    g.add_edge("fetch", "reason_reserve")
+    g.add_conditional_edges(
+        "reason_reserve",
+        lambda s: s["action"],
+        {
             "APPLY_RESERVE": "apply",
-            "ROLLBACK_RESERVE": "rollback",
             "OUT_OF_STOCK": END
         }
     )
 
-    g.add_edge("validate", "reason")
     g.add_edge("apply", END)
     g.add_edge("rollback", END)
 
@@ -300,6 +342,8 @@ async def reserve_stock(req: ReservationReq):
         "order_id": req.order_id,
         "items": [it.dict() for it in req.items],
         "atomic": req.atomic_update,
+        "current_stock": None,
+        "qty": None,
         "action": None,
         "result": None,
         "total_input_tokens": 0,
@@ -311,6 +355,13 @@ async def reserve_stock(req: ReservationReq):
     print(f'Request for reserve_stock, req = {req}, state={state}')
 
     out = await inventory_graph.ainvoke(state)
+
+    if out.get('result') is None:
+        out["result"] = {
+            "order_id": state["order_id"],
+            "status": "OUT_OF_STOCK",
+            "items": state["items"]
+        }
 
     logger.info(f'Request for reserve_stock processed successfully, req = {req}, result={out.get("result")}')
     print(f'Request for reserve_stock processed successfully, req = {req}, result={out.get("result")}')
@@ -326,6 +377,8 @@ async def rollback_stock(req: ReservationReq):
     state = {
         "order_id": req.order_id,
         "items": [it.dict() for it in req.items],
+        "current_stock": None,
+        "qty": None,
         "atomic": req.atomic_update,
         "action": 'ROLLBACK',
         "result": None

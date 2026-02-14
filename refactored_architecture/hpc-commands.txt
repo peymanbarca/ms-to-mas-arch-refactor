@@ -1,6 +1,7 @@
 Agents:
     ps -ef | grep agent
     rm -f *.log
+    fuser -k 8006/tcp
 
     Pricing Agent:
 

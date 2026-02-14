@@ -128,7 +128,7 @@ async def pricing_reasoning(state: PricingState) -> PricingState:
     You are a pricing agent in a retail supply chain.
     
     - Tasks:
-    You MUST compute prices using the unit prices provided, and return response as JSON.
+    You MUST compute prices using the unit prices provided, and return response as JSON  (not python code).
     Apply promotions if applicable (Only apply if promo_codes in REQUEST is not empty):
         - PROMO10 → 10% off line total
         - BUYS2SAVE5 → $5 off if qty >= 2
@@ -213,8 +213,8 @@ async def compute_price(req: PriceRequest):
         product_ids = list(out["price_map"].keys())
         product_unit_prices = list(out["price_map"].values())
         return PriceResponse(
-            items= [PriceResponseItem(product_id=product_ids[i], unit_price=product_unit_prices[i]) for i in range(len(product_ids)
-                                                                                                                   )],
+            items= [PriceResponseItem(product_id=product_ids[i], unit_price=product_unit_prices[i])
+                    for i in range(len(product_ids))],
             subtotal= out["result"].get("subtotal"),
             total_discount= out["result"].get("total_discount", 0.0),
             total= out["result"].get("total", 0.0),

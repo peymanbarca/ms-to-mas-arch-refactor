@@ -7,13 +7,16 @@ import os
 import statistics
 
 # ---------------- CONFIG ----------------
+SEARCH_SERVICE_URL = "http://127.0.0.1:8008/search"
+CART_SERVICE_URL = "http://127.0.0.1:8003/cart/cart_id/items"
 ORDER_SERVICE_URL = "http://127.0.0.1:8000/cart/cart_id/checkout"
+
 ITEM = "laptop"
 SKU = "4cc0770f-91bc-4c0d-a26f-7b872f02ca94"
-INIT_STOCK = 100
+INIT_STOCK = 10
 QTY = 2
 
-N_TRIALS = 100
+N_TRIALS = 10
 MAX_WORKERS = N_TRIALS / 10  # Number of concurrent threads
 total_runs = 1
 
@@ -21,7 +24,7 @@ DELAY = float(os.environ.get("DELAY", "0"))             # seconds to sleep insid
 DROP_RATE = int(os.environ.get("DROP_RATE", "0"))       # percent 0-100
 atomic_update = False
 
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://user:pass1@localhost:27017/")
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/")
 DB_NAME = os.environ.get("DB_NAME", "ms_baseline")
 
 
@@ -42,17 +45,44 @@ def real_db():
 def run_trial(trial_id: int, delay: float, drop_rate: int):
     try:
         start = time.time()
-        # product search
-        # add cart
+        result = {"trial": trial_id, "threads": MAX_WORKERS}
 
-        # main workflow for purchase cart
-        resp = requests.post(ORDER_SERVICE_URL.replace('cart_id', '5811237b-d180-44e0-b042-29ddd5fa3e4f'), timeout=30)
+        # ------------------- product search ---------------------------------
+        st = time.time()
+        params = {'q': 'looking%20for%20laptop'}
+        r = requests.get(url=SEARCH_SERVICE_URL, params=params)
+        r.raise_for_status()
+        et = time.time()
+        search_latency = round((et - st), 3)
+        search_res = r.json()
+        # print(f"Result of product search: {res}, latency: {search_latency}")
+        selected_sku = search_res["results"][0]["sku"]
+        result["search_latency"] = search_latency
+        result["selected_sku"] = selected_sku
+
+        # ---------------- add cart -----------------------------
+        st = time.time()
+        r = requests.post(url=CART_SERVICE_URL.replace('cart_id', '-1'), json={'sku': SKU, 'qty': QTY})
+        et = time.time()
+        cart_latency = round((et - st), 3)
+        cart_res = r.json()
+        cart_id = cart_res['cart_id']
+        result["cart_id"] = cart_id
+        result["cart_latency"] = cart_latency
+
+        # ----------------------- main workflow for purchase cart with order -------------------
+        st = time.time()
+        resp = requests.post(ORDER_SERVICE_URL.replace('cart_id', cart_id), timeout=30)
+        et = time.time()
+        order_latency = round((et - st), 3)
+        result["order_latency"] = order_latency
+
         elapsed = time.time() - start
         if resp.status_code == 200:
-            result = resp.json()
-            result["trial"] = trial_id
+            order_result = resp.json()
+            result["order_id"] = order_result["order_id"]
+            result["status"] = order_result["status"]
             result["elapsed"] = round(elapsed, 3)
-            result["threads"] = MAX_WORKERS
             print(f"Trial {trial_id}: {result}")
             return result
         else:
@@ -149,10 +179,14 @@ if __name__ == '__main__':
             "total_payments": total_payments,
             "final_ec_state": final_ec_state,
             "failure_rate": (failure_rate / N_TRIALS) * 100,
-            "avg_latency": statistics.mean([x['elapsed'] for x in results]),
-            "std_latency": statistics.stdev([x['elapsed'] for x in results]),
-            "p95_latency": statistics.quantiles(data=[x['elapsed'] for x in results], n=100)[95],
-            "med_latency": statistics.median([x['elapsed'] for x in results]),
+            "avg_search_latency": statistics.mean([x['search_latency'] for x in results if x.get('search_latency')]),
+            "std_search_latency": statistics.stdev([x['search_latency'] for x in results if x.get('search_latency')]),
+            "p95_search_latency": statistics.quantiles(data=[x['search_latency'] for x in results if x.get('search_latency')], n=100)[95],
+            "med_search_latency": statistics.median([x['search_latency'] for x in results if x.get('search_latency')]),
+            "avg_latency": statistics.mean([x['elapsed'] for x in results if x.get('elapsed')]),
+            "std_latency": statistics.stdev([x['elapsed'] for x in results if x.get('elapsed')]),
+            "p95_latency": statistics.quantiles(data=[x['elapsed'] for x in results if x.get('elapsed')], n=100)[95],
+            "med_latency": statistics.median([x['elapsed'] for x in results if x.get('elapsed')]),
         }
         print("Final summary:", summary)
         run_results.append({"run_number": i + 1, "trial_results": results, "final_summary": summary})
@@ -160,4 +194,6 @@ if __name__ == '__main__':
 
     # Save all results
     with open(f"results/ms_baseline_results_delay_{DELAY}_drop_{DROP_RATE}.json", "w") as f:
+        f.write("\n\n")
         json.dump(run_results, f)
+        f.write("\n\n")

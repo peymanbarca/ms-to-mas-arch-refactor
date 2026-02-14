@@ -16,8 +16,13 @@ from langgraph.graph import StateGraph, END
 import asyncio
 
 
+
 logger = logging.getLogger("product_search_agent")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    filename='logs/product_search_agent.log',
+    level=logging.INFO,  # Log all messages with severity DEBUG or higher
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the message format
+)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
@@ -81,7 +86,12 @@ async def fetch_candidates_tool(state: ProductSearchAgentState) -> ProductSearch
             {"name": {"$regex": q, "$options": "i"}}
         ).limit(10).to_list(length=10)
 
-    state["candidates"] = docs
+    candidates = []
+    for doc in docs:
+        current_candidate_skus = [c["sku"] for c in candidates]
+        if doc["sku"] not in current_candidate_skus:
+            candidates.append(doc)
+    state["candidates"] = candidates
     return state
 
 
@@ -142,13 +152,13 @@ def parse_json_response(text: str):
         return None
 
 
-async def ranking_node(state: ProductSearchAgentState) -> ProductSearchAgentState:
+async def filter_and_rank_reasoning_node(state: ProductSearchAgentState) -> ProductSearchAgentState:
     products = [
         {
             "sku": d["sku"],
             "name": d["name"],
             "description": d.get("description", ""),
-            "db_score": d.get("score", 1.0)
+            "score": d.get("score", 1.0)
         }
         for d in state["candidates"]
     ]
@@ -160,17 +170,14 @@ async def ranking_node(state: ProductSearchAgentState) -> ProductSearchAgentStat
     
     Task:
     - Fill the final result by matching each product and price by sku from the Prices and Products input  
-    - Return final result ONLY valid JSON with below schema:
+    - Return final result ONLY valid JSON with below schema without intermediate thinking responses:
     
     Schema:
     {{
         "results": [
           {{
             "sku": string,
-            "name": string,
-            "description": string,
-            "price": number,
-            "score": number
+            "price": number
           }}
         ]
     }}
@@ -211,39 +218,47 @@ async def ranking_node(state: ProductSearchAgentState) -> ProductSearchAgentStat
     return state
 
 
-# def assemble_response_node(state: ProductSearchAgentState) -> ProductSearchAgentState:
-#     prices = state.get("prices", {})
-#     docs = {d["sku"]: d for d in state["candidates"]}
-#
-#     results = []
-#     for r in state["ranked"]:
-#         d = docs.get(r["sku"])
-#         if not d:
-#             continue
-#         results.append({
-#             "sku": d["sku"],
-#             "name": d["name"],
-#             "description": d.get("description", ""),
-#             "price": prices.get(d["sku"], 0.0),
-#             "score": float(r["score"])
-#         })
-#
-#     state["results"] = results
-#     return state
+def assemble_response_node(state: ProductSearchAgentState) -> ProductSearchAgentState:
+    fetched_products = [
+        {
+            "sku": d["sku"],
+            "name": d["name"],
+            "description": d.get("description", ""),
+            "score": d.get("score", 1.0)
+        }
+        for d in state["candidates"]
+    ]
+    rank_and_filter_results = state["results"]
+
+    final_results = []
+    for p in fetched_products:
+        sku = p["sku"]
+        if sku not in [res["sku"] for res in rank_and_filter_results]: # it means LLM filtered out this product, so we skip it in final assembly
+            continue
+        final_results.append({
+            "sku": sku,
+            "name": p["name"],
+            "description": p.get("description", ""),
+            "price": rank_and_filter_results[[res["sku"] for res in rank_and_filter_results].index(sku)]["price"],
+            "score": float(p["score"])
+        })
+
+    state["results"] = final_results
+    return state
 
 def build_product_search_agent():
     graph = StateGraph(ProductSearchAgentState)
 
     graph.add_node("fetch_candidates", fetch_candidates_tool)
     graph.add_node("fetch_prices", fetch_prices_tool)
-    graph.add_node("rank", ranking_node)
-    # graph.add_node("assemble", assemble_response_node)
+    graph.add_node("filter_and_rank_reason", filter_and_rank_reasoning_node)
+    graph.add_node("assemble", assemble_response_node)
 
     graph.set_entry_point("fetch_candidates")
     graph.add_edge("fetch_candidates", "fetch_prices")
-    graph.add_edge("fetch_prices", "rank")
-    # graph.add_edge("rank", "assemble")
-    graph.add_edge("rank", END)
+    graph.add_edge("fetch_prices", "filter_and_rank_reason")
+    graph.add_edge("filter_and_rank_reason", "assemble")
+    graph.add_edge("assemble", END)
 
     return graph.compile()
 
