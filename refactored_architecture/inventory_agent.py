@@ -29,7 +29,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8001))
 
-llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
+llm = ChatOllama(model="llama3", temperature=0.0, reasoning=False)
 
 app = FastAPI(title="Inventory Agent")
 
@@ -59,6 +59,9 @@ class InventoryAgentState(TypedDict):
     atomic: bool
     action: str
     result: Optional[Dict[str, Any]]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 @app.on_event("startup")
@@ -230,6 +233,9 @@ async def reasoning_node(state: InventoryAgentState) -> InventoryAgentState:
     decision = parse_json_response(raw_response).get("decision", "OUT_OF_STOCK")
 
     state["action"] = decision
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     return state
 
 
@@ -295,7 +301,10 @@ async def reserve_stock(req: ReservationReq):
         "items": [it.dict() for it in req.items],
         "atomic": req.atomic_update,
         "action": None,
-        "result": None
+        "result": None,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_llm_calls": 0
     }
 
     logger.info(f'Request for reserve_stock, req = {req}, state={state}')
@@ -305,7 +314,11 @@ async def reserve_stock(req: ReservationReq):
 
     logger.info(f'Request for reserve_stock processed successfully, req = {req}, result={out.get("result")}')
     print(f'Request for reserve_stock processed successfully, req = {req}, result={out.get("result")}')
-    return out.get("result")
+    result = out.get("result")
+    result["total_input_tokens"] = out.get("total_input_tokens")
+    result["total_output_tokens"] = out.get("total_output_tokens")
+    result["total_llm_calls"] = out.get("total_llm_calls")
+    return result
 
 
 @app.post("/reserve-rollback")
@@ -318,4 +331,8 @@ async def rollback_stock(req: ReservationReq):
         "result": None
     }
     out = await inventory_graph.ainvoke(state)
-    return out.get("result")
+    result = out.get("result")
+    result["total_input_tokens"] = out.get("total_input_tokens")
+    result["total_output_tokens"] = out.get("total_output_tokens")
+    result["total_llm_calls"] = out.get("total_llm_calls")
+    return result

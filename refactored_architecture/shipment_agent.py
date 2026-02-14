@@ -27,7 +27,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8006))
 
-llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
+llm = ChatOllama(model="llama3", temperature=0.0, reasoning=False)
 
 app = FastAPI(title="Shipment Booking Agent")
 
@@ -43,12 +43,18 @@ class ShipmentRequest(BaseModel):
 class ShipmentResponse(BaseModel):
     shipment_id: str
     tracking_id: str
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 class ShipmentState(TypedDict):
     request: Dict[str, Any]
     carrier_result: Dict[str, Any]
     result: Dict[str, Any]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 @app.on_event("startup")
 async def startup():
@@ -102,19 +108,16 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
 
     Your task:
     - Confirm existence of tracking_id in CARRIER_RESULT input
-    - Generate shipment_id as uuid
     - Return ONLY a JSON response not python code
 
     Rules:
     - tracking_id must come from CARRIER_RESULT input
-    - shipment_id must be newly generated as UUID
-    - if both shipment_id and tracking_id exist, success in response should be true, otherwise it should be false.
+    - if both tracking_id exist, success in response should be true, otherwise it should be false.
     
     Return just and ONLY valid JSON for final step in the following schema:
 
     Schema:
     {{
-      "shipment_id": string,
       "success" bool
     }}
 
@@ -147,7 +150,12 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
         raise ValueError(f"Invalid JSON from shipment agent: {raw_response}") from e
 
     state["result"] = parsed
+    if parsed["success"]:
+        state["result"]["shipment_id"] = str(uuid.uuid4())
     state["result"]["tracking_id"] = state["carrier_result"]["tracking_id"]
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     return state
 
 
@@ -173,7 +181,10 @@ async def book_shipment(req: ShipmentRequest):
         state = {
             "request": req.dict(),
             "carrier_result": {},
-            "result": {}
+            "result": {},
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
         }
         logger.info(f'Request for book_shipment, req = {req}, state={state}')
         print(f'Request for book_shipment, req = {req}, state={state}')
@@ -198,8 +209,14 @@ async def book_shipment(req: ShipmentRequest):
         }
 
         await db.shipments.insert_one(doc)
-
-        return ShipmentResponse(**out["result"])
+        result = {
+            "shipment_id": shipment_id,
+            "tracking_id": tracking_id,
+            "total_input_tokens": out["total_input_tokens"],
+            "total_output_tokens": out["total_output_tokens"],
+            "total_llm_calls": out["total_llm_calls"]
+        }
+        return ShipmentResponse(**result)
 
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))

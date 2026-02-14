@@ -18,4 +18,7 @@ R = 100
 delta_q_lat_p95 = lat_p95 - lat_p95_baseline
 delta_c = delta_q_lat_p95 * c_infra + (c_obs_per_req - c_obs_per_req_baseline + c_llm_token * n_llm_token) * R
 
-print(f'delta_q_lat_p95 = {delta_q_lat_p95} , delta_c = {delta_c}')
+print(f'delta_q_lat_p95 = {delta_q_lat_p95} , delta_c = {delta_c},  '
+      f' Infra term: {100 * delta_q_lat_p95 * c_infra / delta_c} , '
+      f' LLM term: {c_llm_token * n_llm_token * 100 * R / delta_c}'
+      f' Obs term: {(c_obs_per_req - c_obs_per_req_baseline) * 100 * R / delta_c} ')

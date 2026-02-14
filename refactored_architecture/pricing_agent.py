@@ -22,7 +22,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8002))
 
-llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
+llm = ChatOllama(model="llama3", temperature=0.0, reasoning=False)
 
 app = FastAPI(title="Pricing & Promotion Agent")
 
@@ -46,10 +46,7 @@ class PriceRequest(BaseModel):
 
 class PriceResponseItem(BaseModel):
     product_id: str
-    qty: int
     unit_price: float
-    line_total: float
-    discounts: float
 
 class PriceResponse(BaseModel):
     items: List[PriceResponseItem] = []
@@ -57,11 +54,17 @@ class PriceResponse(BaseModel):
     total_discount: float
     total: float
     currency: Optional[str] = None
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 class PricingState(TypedDict):
     request: Dict[str, Any]
     price_map: Dict[str, float]
     result: Dict[str, Any]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 @app.on_event("startup")
 async def startup():
@@ -168,6 +171,9 @@ async def pricing_reasoning(state: PricingState) -> PricingState:
         raise ValueError(f"Invalid JSON from pricing agent: {raw_response}") from e
 
     state["result"] = parsed
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     return state
 
 
@@ -193,14 +199,30 @@ async def compute_price(req: PriceRequest):
         state = {
             "request": req.dict(),
             "price_map": {},
-            "result": {}
+            "result": {},
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
         }
         logger.info(f'Request for compute_price, req = {req}, state={state}')
         print(f'Request for compute_price, req = {req}, state={state}')
         out = await pricing_graph.ainvoke(state)
         logger.info(f'Request for compute_price processed successfully, req = {req}, result={out.get("result")}')
         print(f'Request for compute_price processed successfully, req = {req}, result={out.get("result")}')
-        return out["result"]
+
+        product_ids = list(out["price_map"].keys())
+        product_unit_prices = list(out["price_map"].values())
+        return PriceResponse(
+            items= [PriceResponseItem(product_id=product_ids[i], unit_price=product_unit_prices[i]) for i in range(len(product_ids)
+                                                                                                                   )],
+            subtotal= out["result"].get("subtotal"),
+            total_discount= out["result"].get("total_discount", 0.0),
+            total= out["result"].get("total", 0.0),
+            currency= req.currency,
+            total_input_tokens= out["total_input_tokens"],
+            total_output_tokens= out["total_output_tokens"],
+            total_llm_calls= out["total_llm_calls"]
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -24,7 +24,7 @@ MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8008))
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:8002")
 
-llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
+llm = ChatOllama(model="llama3", temperature=0.0, reasoning=False)
 
 app = FastAPI(title="Product Search Agent")
 
@@ -49,6 +49,9 @@ class ProductCreate(BaseModel):
 class ProductSearchResponse(BaseModel):
     query: str
     results: List[ProductSearchResultItem]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 class ProductSearchAgentState(TypedDict):
@@ -56,6 +59,9 @@ class ProductSearchAgentState(TypedDict):
     candidates: List[Dict[str, Any]]
     prices: List[Dict[str, Any]]
     results: List[Dict[str, Any]]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 async def fetch_candidates_tool(state: ProductSearchAgentState) -> ProductSearchAgentState:
@@ -101,6 +107,11 @@ async def fetch_prices_tool(state: ProductSearchAgentState) -> ProductSearchAgen
         prices[it["product_id"]] = it["unit_price"]
 
     state["prices"] = prices
+
+    state["total_input_tokens"] += jr["total_input_tokens"]
+    state["total_output_tokens"] += jr["total_output_tokens"]
+    state["total_llm_calls"] += jr["total_llm_calls"]
+
     return state
 
 @app.on_event("startup")
@@ -194,6 +205,9 @@ async def ranking_node(state: ProductSearchAgentState) -> ProductSearchAgentStat
         raise ValueError(f"Invalid result output: {raw_response}") from e
 
     state["results"] = results["results"]
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     return state
 
 
@@ -247,7 +261,10 @@ async def search_products(q: str = Query(...), limit: int = 5):
     state = {
         "query": q,
         "candidates": [],
-        "ranked": []
+        "ranked": [],
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_llm_calls": 0
     }
 
     try:
@@ -255,7 +272,10 @@ async def search_products(q: str = Query(...), limit: int = 5):
         print(f'------------\n {out}')
         return ProductSearchResponse(
             query=q,
-            results=out["results"][:limit]
+            results=out["results"][:limit],
+            total_llm_calls=out["total_llm_calls"],
+            total_input_tokens=out["total_input_tokens"],
+            total_output_tokens=out["total_output_tokens"]
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

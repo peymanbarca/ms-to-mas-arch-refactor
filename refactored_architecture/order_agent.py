@@ -36,7 +36,7 @@ PRICING_SERVICE_URL = "http://127.0.0.1:8002"
 PAYMENT_SERVICE_URL = "http://127.0.0.1:8007/pay-order"
 SHIPMENT_SERVICE_URL = "http://127.0.0.1:8006/book"
 
-llm = ChatOllama(model="qwen2", temperature=0.5, reasoning=False)
+llm = ChatOllama(model="llama3", temperature=0.7, reasoning=False)
 
 app = FastAPI(title="Order Agent")
 
@@ -96,6 +96,10 @@ class OrderState(TypedDict):
 
     decision: Optional[str]
     status: Optional[str]
+
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 @app.on_event("startup")
@@ -202,40 +206,45 @@ def parse_json_response(text: str):
 
 def reason_node(state: OrderState):
     order_reasoning_prompt = f"""
-        You are an autonomous order orchestration agent.
+            You are an autonomous order orchestration agent.
 
-        Your goal is to complete an order workflow.
-        You must decide the next action based on PREVIOUS_ACTION and CURRENT_STATUS input
-        Return ONLY a JSON response not python code
+            Tasks:
+    	- Your goal is to complete an order workflow.
+            - You must decide the next_action as output based on PREVIOUS_ACTION and CURRENT_STATUS input
+            - Return ONLY a JSON response not python code
 
-        - Do not return middle steps and thinking procedure in response    
-        - Return the next action as valid json in this schema: {{"next_action": string}}
-        
-        Possible actions: 
-        - FETCH_CART
-        - PRICE_CART
-        - RESERVE_INVENTORY
-        - PROCESS_PAYMENT
-        - ROLLBACK_INVENTORY
-        - BOOK_SHIPMENT
-        - FINISH
+            - Do not return middle steps and thinking procedure in response
+            - Return the next action as valid json in this schema: {{"next_action": string}}
 
-        Rules:
-        - if PREVIOUS_ACTION is null or None or empty, choose next action as FETCH_CART
-        - else choose next action based on this workflow:
-            1) FETCH_CART --> 2) PRICE_CART --> 3) RESERVE_INVENTORY --> 4) PROCESS_PAYMENT --> 5) BOOK_SHIPMENT --> 6) FINISH
-            
-        Rule Exceptions:    
-        - If CURRENT_STATUS is OUT_OF_STOCK choose next action as FINISH
-        - If CURRENT_STATUS is PAYMENT_FAILED choose next action a ROLLBACK_INVENTORY
-        - If CURRENT_STATUS is ROLLBACK_INVENTORY, choose next action as FINISH
-        - Never skip any steps
+            Possible actions:
+            - FETCH_CART
+            - PRICE_CART
+            - RESERVE_INVENTORY
+            - PROCESS_PAYMENT
+            - ROLLBACK_INVENTORY
+            - BOOK_SHIPMENT
+            - FINISH
 
-        Input:
-        PREVIOUS_ACTION: {state['decision']}
-        CURRENT_STATUS: {state['status']}
+            Rules:
+    	    - If PREVIOUS_ACTION is empty, choose the next_action as FETCH_CART
+            - Else, choose the next_action from this workflow for the input PREVIOUS_ACTION:
+                FETCH_CART -> PRICE_CART
+                PRICE_CART -> RESERVE_INVENTORY
+                RESERVE_INVENTORY  -> PROCESS_PAYMENT
+                PROCESS_PAYMENT -> BOOK_SHIPMENT
+                BOOK_SHIPMENT -> FINISH
+            - Never choose next_action same as PREVIOUS_ACTION
 
-        """
+            Rule Exceptions:
+            - If CURRENT_STATUS is OUT_OF_STOCK choose next action as FINISH
+            - If CURRENT_STATUS is PAYMENT_FAILED choose next action a ROLLBACK_INVENTORY
+            - If CURRENT_STATUS is ROLLBACK_INVENTORY, choose next action as FINISH
+            - Never skip any steps
+
+            Input:
+            PREVIOUS_ACTION: {state['decision']}
+            CURRENT_STATUS: {state['status']}
+    """
 
     logger.info(f'LLM Call Prompt: {order_reasoning_prompt}')
     response = llm.invoke(order_reasoning_prompt)
@@ -261,6 +270,9 @@ def reason_node(state: OrderState):
     print(f'LLM Parsed response: {decision}')
 
     state["decision"] = decision["next_action"]
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     return state
 
 
@@ -273,6 +285,11 @@ def fetch_cart_node(state: OrderState):
     print(f'Response of fetch_cart_node tool ==> {cart}, \n-------------------------------------')
 
     state["items"] = cart["items"]
+
+    state["total_input_tokens"] += cart["total_input_tokens"]
+    state["total_output_tokens"] += cart["total_output_tokens"]
+    state["total_llm_calls"] += cart["total_llm_calls"]
+
     return state
 
 
@@ -284,6 +301,10 @@ def pricing_node(state: OrderState):
     print(f'Response of pricing_node tool ==> {pricing}, \n-------------------------------------')
 
     state["final_price"] = pricing["total"]
+
+    state["total_input_tokens"] += pricing["total_input_tokens"]
+    state["total_output_tokens"] += pricing["total_output_tokens"]
+    state["total_llm_calls"] += pricing["total_llm_calls"]
 
     # init order in DB
     db.orders.insert_one({"_id": state['order_id'], "items": [{'sku': item['sku'], 'qty': item['qty']} for item in state['items']],
@@ -303,6 +324,10 @@ def reserve_inventory_node(state: OrderState):
     if res["status"] == "OUT_OF_STOCK":
         state["status"] = "OUT_OF_STOCK"
 
+    state["total_input_tokens"] += res["total_input_tokens"]
+    state["total_output_tokens"] += res["total_output_tokens"]
+    state["total_llm_calls"] += res["total_llm_calls"]
+
     # update order status in DB
     db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": state["inventory_status"]}})
     return state
@@ -318,11 +343,18 @@ def payment_node(state: OrderState):
 
         state["payment_status"] = res["status"]
         state["status"] = "PAYMENT_SUCCEED" if res["status"] == "SUCCESS" else "PAYMENT_FAILED"
+
+        state["total_input_tokens"] += res["total_input_tokens"]
+        state["total_output_tokens"] +=  res["total_output_tokens"]
+        state["total_llm_calls"] += res["total_llm_calls"]
+
     except Exception as e:
         logger.info(f'Exception in response of payment_node tool ==> {e}, \n-------------------------------------')
         print(f'Exception in response of payment_node tool ==> {e}, \n-------------------------------------')
         state["payment_status"] = "FAILED"
         state["status"] = "PAYMENT_FAILED"
+
+
     # update order status in DB
     db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": state["status"]}})
 
@@ -346,6 +378,11 @@ def shipment_node(state: OrderState):
 
         state["shipment_status"] = "BOOKED"
         state["status"] = "COMPLETED"
+
+        state["total_input_tokens"] += res["total_input_tokens"]
+        state["total_output_tokens"] +=  res["total_output_tokens"]
+        state["total_llm_calls"] += res["total_llm_calls"]
+
         # update order status in DB
         db.orders.update_one({"_id": state['order_id']}, {"$set": {"status": "COMPLETED"}})
 
@@ -413,17 +450,24 @@ def checkout_cart_agent(cart_id: str):
         "shipment_status": None,
 
         "decision": None,
-        "status": None
+        "status": None,
+
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_llm_calls": 0
     }
 
     logger.info(f'Request for checkout_cart, cart_id = {cart_id}, state={state}')
     print(f'Request for checkout_cart, cart_id = {cart_id}, state={state}')
 
-    final_state = order_agent.invoke(state, config={"recursion_limit": 3})
+    final_state = order_agent.invoke(state, config={"recursion_limit": 12})
 
     return {
         "order_id": final_state["order_id"],
-        "status": final_state["status"]
+        "status": final_state["status"],
+        "total_input_tokens": final_state.get("total_input_tokens"),
+        "total_output_tokens": final_state.get("total_output_tokens"),
+        "total_llm_calls": final_state.get("total_llm_calls")
     }
 
 

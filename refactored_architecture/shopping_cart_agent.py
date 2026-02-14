@@ -27,7 +27,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8003))
 
-llm = ChatOllama(model="qwen2", temperature=0.0, reasoning=False)
+llm = ChatOllama(model="llama3", temperature=0.0, reasoning=False)
 
 app = FastAPI(title="Shopping Cart Agent")
 
@@ -42,6 +42,9 @@ class CartItem(BaseModel):
 class Cart(BaseModel):
     cart_id: str
     items: List[CartItem] = []
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 class CartAgentState(TypedDict):
@@ -50,6 +53,9 @@ class CartAgentState(TypedDict):
     item: Dict[str, Any] | None
     cart: Dict[str, Any]
     result: Dict[str, Any]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 @app.on_event("startup")
 async def startup():
@@ -72,6 +78,16 @@ async def fetch_cart_tool(state: CartAgentState) -> CartAgentState:
     logger.info(f'Calling fetch_cart_tool ... \n Current State is {state}')
     print(f'Calling fetch_cart_tool ... \n Current State is {state}')
 
+    if state["cart_id"] == '-1':
+        state["cart"] = {
+            "cart_id": state["cart_id"],
+            "items": []
+        }
+
+        logger.info(f'Going to create new cart ==> {state}, \n-------------------------------------')
+        print(f'Going to create new cart  ==> {state}, \n-------------------------------------')
+        return state
+
     doc = await db.carts.find_one({"cart_id": state["cart_id"]})
     if not doc:
         logger.exception('Response state of fetch_cart_tool ==> cart not found, \n-------------------------------------')
@@ -93,11 +109,22 @@ async def persist_cart_tool(state: CartAgentState) -> CartAgentState:
     logger.info(f'Calling persist_cart_tool ... \n Current State is {state}')
     print(f'Calling persist_cart_tool ... \n Current State is {state}')
 
-    await db.carts.update_one(
-        {"cart_id": state["cart_id"]},
-        {"$set": {"items": state["cart"]["items"]}},
-        upsert=True
-    )
+    cart_id = state["cart_id"]
+    if cart_id != '-1':
+        await db.carts.update_one(
+            {"cart_id": cart_id},
+            {"$set": {"items": state["cart"]["items"]}},
+            upsert=True
+        )
+    else: # create new cart
+        cart_id = str(uuid.uuid4())
+        state["cart_id"] = cart_id
+        await db.carts.update_one(
+            {"cart_id": cart_id},
+            {"$set": {"items": state["cart"]["items"]}},
+            upsert=True
+        )
+
     logger.info('Called successfully of persist_cart_tool')
     print('Called successfully of persist_cart_tool')
     return state
@@ -173,6 +200,9 @@ async def cart_reasoning_node(state: CartAgentState) -> CartAgentState:
 
     state["result"] = updated
     state["cart"]["items"] = updated["items"]
+    state["total_input_tokens"] += input_tokens
+    state["total_output_tokens"] += output_tokens
+    state["total_llm_calls"] += 1
     return state
 
 
@@ -184,7 +214,17 @@ def build_cart_agent():
     graph.add_node("persist_cart", persist_cart_tool)
 
     graph.set_entry_point("fetch_cart")
-    graph.add_edge("fetch_cart", "reason_cart")
+
+    graph.add_conditional_edges(
+        "fetch_cart",
+        lambda s: s["action"],
+        {
+            "VIEW": END,
+            "ADD_ITEM": "reason_cart",
+            "REMOVE_ITEM": "reason_cart"
+        }
+    )
+
     graph.add_edge("reason_cart", "persist_cart")
     graph.add_edge("persist_cart", END)
 
@@ -202,7 +242,10 @@ async def get_cart(cart_id: str):
             "action": "VIEW",
             "item": None,
             "cart": {},
-            "result": {}
+            "result": {},
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
         }
         logger.info(f'Request for get_cart, cart_id = {cart_id}, state={state}')
         print(f'Request for get_cart, cart_id = {cart_id}, state={state}')
@@ -210,7 +253,14 @@ async def get_cart(cart_id: str):
         out = await cart_graph.ainvoke(state)
         logger.info(f'Request for get_cart processed successfully, cart_id = {cart_id}, result={out.get("cart")}')
         print(f'Request for get_cart processed successfully, cart_id = {cart_id}, result={out.get("cart")}')
-        return Cart(**out["cart"])
+        result = out.get("cart")
+        return Cart(
+            cart_id=out["cart_id"],
+            items=result.get("items", []),
+            total_input_tokens=out["total_input_tokens"],
+            total_output_tokens=out["total_output_tokens"],
+            total_llm_calls=out["total_llm_calls"]
+        )
     except Exception:
         raise HTTPException(status_code=404, detail="cart not found")
 
@@ -223,7 +273,10 @@ async def add_item(cart_id: str, item: CartItem):
             "action": "ADD_ITEM",
             "item": item.dict(),
             "cart": {},
-            "result": {}
+            "result": {},
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
         }
         logger.info(f'Request for add_item, cart_id = {cart_id}, item = {item}, state={state}')
         print(f'Request for add_item, cart_id = {cart_id}, item = {item}, state={state}')
@@ -231,7 +284,14 @@ async def add_item(cart_id: str, item: CartItem):
         out = await cart_graph.ainvoke(state)
         logger.info(f'Request for add_item processed successfully, cart_id = {cart_id}, result={out.get("cart")}')
         print(f'Request for add_item processed successfully, cart_id = {cart_id}, result={out.get("cart")}')
-        return Cart(**out["cart"])
+        result = out.get("cart")
+        return Cart(
+            cart_id=out["cart_id"],
+            items=result.get("items", []),
+            total_input_tokens=out["total_input_tokens"],
+            total_output_tokens=out["total_output_tokens"],
+            total_llm_calls=out["total_llm_calls"]
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -244,10 +304,20 @@ async def remove_item(cart_id: str, sku: str):
             "action": "REMOVE_ITEM",
             "item": {"sku": sku},
             "cart": {},
-            "result": {}
+            "result": {},
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
         }
         out = await cart_graph.ainvoke(state)
-        return Cart(**out["cart"])
+        result = out.get("cart")
+        return Cart(
+            cart_id=out["cart_id"],
+            items=result.get("items", []),
+            total_input_tokens=out["total_input_tokens"],
+            total_output_tokens=out["total_output_tokens"],
+            total_llm_calls=out["total_llm_calls"]
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
