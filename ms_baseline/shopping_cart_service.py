@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
 import uuid
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PORT = int(os.getenv("PORT", 8003))
 
@@ -70,6 +70,12 @@ async def get_cart(cart_id: str):
 
 @app.post("/cart/{cart_id}/items", response_model=Cart)
 async def add_item(cart_id: str, item: CartItem):
+    if cart_id == '-1': # create new cart
+        cart_id = str(uuid.uuid4())
+        items = [{"sku": item.sku, "qty": item.qty}]
+        await db.carts.insert_one({"cart_id": cart_id, "items": items})
+        return Cart(cart_id=cart_id, items=items)
+
     doc = await db.carts.find_one({"cart_id": cart_id})
     if not doc:
         raise HTTPException(status_code=404, detail="cart not found")

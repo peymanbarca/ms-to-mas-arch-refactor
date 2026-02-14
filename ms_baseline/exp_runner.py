@@ -11,20 +11,20 @@ SEARCH_SERVICE_URL = "http://127.0.0.1:8008/search"
 CART_SERVICE_URL = "http://127.0.0.1:8003/cart/cart_id/items"
 ORDER_SERVICE_URL = "http://127.0.0.1:8000/cart/cart_id/checkout"
 
-ITEM = "laptop"
-SKU = "4cc0770f-91bc-4c0d-a26f-7b872f02ca94"
+ITEM = "headphone"
+SKU = "b2926dc2-cc6d-4c3e-ae40-7a127c173b16"
 INIT_STOCK = 10
 QTY = 2
 
 N_TRIALS = 10
-MAX_WORKERS = N_TRIALS / 10  # Number of concurrent threads
+MAX_WORKERS = N_TRIALS / 2  # Number of concurrent threads
 total_runs = 1
 
 DELAY = float(os.environ.get("DELAY", "0"))             # seconds to sleep inside inventory agent
 DROP_RATE = int(os.environ.get("DROP_RATE", "0"))       # percent 0-100
 atomic_update = False
 
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017/")
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://user:pass1@localhost:27017/")
 DB_NAME = os.environ.get("DB_NAME", "ms_baseline")
 
 
@@ -49,13 +49,13 @@ def run_trial(trial_id: int, delay: float, drop_rate: int):
 
         # ------------------- product search ---------------------------------
         st = time.time()
-        params = {'q': 'looking%20for%20laptop'}
+        params = {'q': 'looking for headphone with noise cancelling'}
         r = requests.get(url=SEARCH_SERVICE_URL, params=params)
         r.raise_for_status()
         et = time.time()
         search_latency = round((et - st), 3)
         search_res = r.json()
-        # print(f"Result of product search: {res}, latency: {search_latency}")
+        # print(f"Result of product search: {search_res}, latency: {search_latency}")
         selected_sku = search_res["results"][0]["sku"]
         result["search_latency"] = search_latency
         result["selected_sku"] = selected_sku
@@ -69,6 +69,7 @@ def run_trial(trial_id: int, delay: float, drop_rate: int):
         cart_id = cart_res['cart_id']
         result["cart_id"] = cart_id
         result["cart_latency"] = cart_latency
+
 
         # ----------------------- main workflow for purchase cart with order -------------------
         st = time.time()
