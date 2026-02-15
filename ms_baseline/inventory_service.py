@@ -129,7 +129,10 @@ def reserve_stock(req: ReservationReq):
             return {
                 "order_id": req.order_id,
                 "status": "RESERVED",
-                "items": results
+                "items": results,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_llm_calls": 0
             }
 
         except Exception as e:
@@ -139,7 +142,10 @@ def reserve_stock(req: ReservationReq):
             return {
                 "order_id": req.order_id,
                 "status": "OUT_OF_STOCK",
-                "reason": str(e)
+                "reason": str(e),
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_llm_calls": 0
             }
 
     # ============================
@@ -177,7 +183,10 @@ def reserve_stock(req: ReservationReq):
         return {
             "order_id": req.order_id,
             "status": "RESERVED",
-            "items": updated
+            "items": updated,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
         }
 
 
@@ -209,14 +218,20 @@ def rollback_reserve_stock(req: ReservationReq):
             return {
                 "order_id": req.order_id,
                 "status": "RESERVED_ROLLBACK",
-                "items": results
+                "items": results,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_llm_calls": 0
             }
 
         except Exception as e:
             return {
                 "order_id": req.order_id,
                 "status": "FAILED",
-                "reason": str(e)
+                "reason": str(e),
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_llm_calls": 0
             }
 
     # ============================
@@ -248,7 +263,10 @@ def rollback_reserve_stock(req: ReservationReq):
         return {
             "order_id": req.order_id,
             "status": "RESERVED_ROLLBACK",
-            "items": updated
+            "items": updated,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
         }
 
 

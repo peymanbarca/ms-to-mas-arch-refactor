@@ -57,6 +57,9 @@ class PriceResponse(BaseModel):
     total_discount: float
     total: float
     currency: Optional[str] = None
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 @app.on_event("startup")
@@ -125,7 +128,8 @@ async def compute_price(req: PriceRequest):
     total = max(0.0, subtotal - total_discount)
     result = PriceResponse(items=items_out, subtotal=round(subtotal, 2),
                            total_discount=round(total_discount, 2),
-                           total=round(total, 2), currency=req.currency)
+                           total=round(total, 2), currency=req.currency,
+                           total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
     logger.info(f"Request for compute_price successfully processed, result: {result}, request: {req}")
 
     return result

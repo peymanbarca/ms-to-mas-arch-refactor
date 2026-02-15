@@ -142,7 +142,11 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
             latency = end_time - start_time
             logger.info(
                 f"Request for orchestrate_order completed, final_status:{order_final_status},  trace_id={trace_id}")
-            return {"order_id": order_id, "status": order_final_status, "latency": latency}
+            return {"order_id": order_id, "status": order_final_status, "latency": latency,
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                    "total_llm_calls": 0}
+
 
         try:
             payment_payload = {'order_id': order_id, 'final_price': order.final_price}
@@ -191,7 +195,11 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
                 latency = end_time - start_time
                 logger.info(
                     f"Request for orchestrate_order completed, final_status:{order_final_status},  trace_id={trace_id}")
-                return {"order_id": order_id, "status": order_final_status, "latency": latency}
+                return {"order_id": order_id, "status": order_final_status, "latency": latency,
+                        "total_input_tokens": 0,
+                        "total_output_tokens": 0,
+                        "total_llm_calls": 0
+                        }
 
             # success payment
             else:
@@ -236,4 +244,8 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
     end_time = time.time()
     latency = end_time - start_time
     logger.info(f"Request for orchestrate_order completed, final_status:{order_final_status},  trace_id={trace_id}")
-    return {"order_id": order_id, "status": order_final_status, "latency": latency}
+    return {"order_id": order_id, "status": order_final_status, "latency": latency,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_llm_calls": 0
+            }

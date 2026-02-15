@@ -199,9 +199,9 @@ if __name__ == '__main__':
             "std_latency": statistics.stdev([x['elapsed'] for x in results if x.get('elapsed')]),
             "p95_latency": statistics.quantiles(data=[x['elapsed'] for x in results if x.get('elapsed')], n=100)[95],
             "med_latency": statistics.median([x['elapsed'] for x in results if x.get('elapsed')]),
-            "total_input_tokens": sum([x['total_input_tokens'] for x in results]),
-            "total_output_tokens": sum([x['total_output_tokens'] for x in results]),
-            "total_llm_calls": sum([x['total_llm_calls'] for x in results]),
+            "total_input_tokens": sum([x['total_input_tokens'] for x in results if x.get('total_input_tokens')]),
+            "total_output_tokens": sum([x['total_output_tokens'] for x in results if x.get('total_output_tokens')]),
+            "total_llm_calls": sum([x['total_llm_calls'] for x in results if x.get('total_llm_calls')]),
         }
         print("Final summary:", summary)
         run_results.append({"run_number": i + 1, "trial_results": results, "final_summary": summary})

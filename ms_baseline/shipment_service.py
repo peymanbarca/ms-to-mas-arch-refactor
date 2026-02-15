@@ -39,6 +39,9 @@ class ShipmentRequest(BaseModel):
 class ShipmentResponse(BaseModel):
     shipment_id: str
     tracking_id: str
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 @app.on_event("startup")
@@ -89,7 +92,8 @@ async def book_shipment(req: ShipmentRequest):
             "tracking_id": tracking_id
         }
         await db.shipments.insert_one(doc)
-        result = ShipmentResponse(shipment_id=shipment_id, tracking_id=doc["tracking_id"])
+        result = ShipmentResponse(shipment_id=shipment_id, tracking_id=doc["tracking_id"],
+                                  total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
         logger.info(f"Request for book_shipment successfully processed, request: {req}, order_id={req.order_id},"
                     f" result: {result}")
 

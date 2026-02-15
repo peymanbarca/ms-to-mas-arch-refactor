@@ -42,6 +42,9 @@ class ProductCreate(BaseModel):
 class ProductSearchResponse(BaseModel):
     query: str
     results: List[ProductSearchResultItem]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 @app.on_event("startup")
 async def startup():
@@ -112,7 +115,8 @@ async def search_products(q: str = Query(..., example="noise cancelling headphon
         score = d.get("score", 1.0)
         results.append(ProductSearchResultItem(sku=d["sku"], name=d["name"], description=d.get("description",""),
                                                price=price, score=float(score)))
-    final_result = ProductSearchResponse(query=q, results=results)
+    final_result = ProductSearchResponse(query=q, results=results,
+                                         total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
     logger.info(f"Request for search_products successfully processed, query: {q}, result: {final_result}")
 
     return final_result

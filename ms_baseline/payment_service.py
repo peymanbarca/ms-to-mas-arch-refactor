@@ -31,6 +31,9 @@ class PaymentRequest(BaseModel):
 class PaymentResponse(BaseModel):
     order_id: str
     status: Literal["SUCCESS", "FAILED"]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 
 @app.post("/clear_payments")
@@ -55,4 +58,6 @@ def process_payment(request: PaymentRequest):
     PAYMENT_COLL.insert_one({'order_id': request.order_id, 'final_price': request.final_price, 'status': status})
     logger.info(f"Request for process_payment successfully processed, order_id: {request.order_id}, status: {status}")
 
-    return PaymentResponse(order_id=request.order_id, status=status)
+    return PaymentResponse(order_id=request.order_id, status=status,
+                           total_input_tokens=0, total_output_tokens=0, total_llm_calls=0
+    )

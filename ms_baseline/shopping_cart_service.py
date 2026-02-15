@@ -33,6 +33,9 @@ class CartItem(BaseModel):
 class Cart(BaseModel):
     cart_id: str
     items: List[CartItem] = []
+    total_input_tokens: int
+    total_output_tokens: int
+    total_llm_calls: int
 
 @app.on_event("startup")
 async def startup():
@@ -55,7 +58,7 @@ async def shutdown():
 async def create_cart():
     cart_id = str(uuid.uuid4())
     await db.carts.insert_one({"cart_id": cart_id, "items": []})
-    return Cart(cart_id=cart_id, items=[])
+    return Cart(cart_id=cart_id, items=[], total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
 
 @app.get("/cart/{cart_id}", response_model=Cart)
 async def get_cart(cart_id: str):
@@ -64,7 +67,8 @@ async def get_cart(cart_id: str):
     if not doc:
         logger.exception(f"Request for get_cart, not found cart_id: {cart_id}")
         raise HTTPException(status_code=404, detail="cart not found")
-    result = Cart(cart_id=doc["cart_id"], items=doc.get("items", []))
+    result = Cart(cart_id=doc["cart_id"], items=doc.get("items", []),
+                  total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
     logger.info(f"Request for get_cart, cart_id: {cart_id}, result: {result}")
     return result
 
@@ -74,7 +78,7 @@ async def add_item(cart_id: str, item: CartItem):
         cart_id = str(uuid.uuid4())
         items = [{"sku": item.sku, "qty": item.qty}]
         await db.carts.insert_one({"cart_id": cart_id, "items": items})
-        return Cart(cart_id=cart_id, items=items)
+        return Cart(cart_id=cart_id, items=items, total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
 
     doc = await db.carts.find_one({"cart_id": cart_id})
     if not doc:
@@ -87,7 +91,7 @@ async def add_item(cart_id: str, item: CartItem):
     else:
         items.append({"sku": item.sku, "qty": item.qty})
     await db.carts.update_one({"cart_id": cart_id}, {"$set": {"items": items}})
-    return Cart(cart_id=cart_id, items=items)
+    return Cart(cart_id=cart_id, items=items, total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
 
 @app.delete("/cart/{cart_id}/items/{sku}", response_model=Cart)
 async def remove_item(cart_id: str, sku: str):
@@ -96,6 +100,6 @@ async def remove_item(cart_id: str, sku: str):
         raise HTTPException(status_code=404, detail="cart not found")
     items = [it for it in doc.get("items", []) if it["sku"] != sku]
     await db.carts.update_one({"cart_id": cart_id}, {"$set": {"items": items}})
-    return Cart(cart_id=cart_id, items=items)
+    return Cart(cart_id=cart_id, items=items, total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
 
 
