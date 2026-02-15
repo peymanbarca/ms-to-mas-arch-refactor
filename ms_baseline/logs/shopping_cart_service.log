@@ -19,3 +19,4 @@
 2026-02-14 17:54:29,365 - INFO - Request for get_cart, cart_id: f65805fd-0c97-4424-9b9f-def9304ba085, result: cart_id='f65805fd-0c97-4424-9b9f-def9304ba085' items=[CartItem(sku='b2926dc2-cc6d-4c3e-ae40-7a127c173b16', qty=2)]
 2026-02-14 17:54:29,370 - INFO - Request for get_cart, cart_id: 17db00ec-926b-481f-b31e-f39e55088743
 2026-02-14 17:54:29,371 - INFO - Request for get_cart, cart_id: 17db00ec-926b-481f-b31e-f39e55088743, result: cart_id='17db00ec-926b-481f-b31e-f39e55088743' items=[CartItem(sku='b2926dc2-cc6d-4c3e-ae40-7a127c173b16', qty=2)]
+2026-02-14 19:53:41,374 - INFO - ShoppingCart connected to mongo
