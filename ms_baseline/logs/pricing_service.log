@@ -41,3 +41,14 @@
 2026-02-14 17:54:29,377 - INFO - Request for compute_price successfully processed, result: items=[PriceResponseItem(product_id='b2926dc2-cc6d-4c3e-ae40-7a127c173b16', qty=2, unit_price=200.0, line_total=400.0, discounts=0.0)] subtotal=400.0 total_discount=0.0 total=400.0 currency='USD', request: items=[PriceRequestItem(product_id='b2926dc2-cc6d-4c3e-ae40-7a127c173b16', qty=2)] promo_codes=[] currency='USD' only_final_price=True
 2026-02-14 19:53:34,617 - INFO - MongoDB connection closed
 2026-02-14 19:53:40,359 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-02-14 20:31:45,323 - INFO - MongoDB connection closed
+2026-02-14 20:31:47,976 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-02-14 20:32:17,897 - INFO - MongoDB connection closed
+2026-02-14 20:32:21,207 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-02-14 20:32:33,859 - INFO - MongoDB connection closed
+2026-02-14 20:32:36,675 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-02-14 20:33:09,584 - INFO - MongoDB connection closed
+2026-02-14 20:33:12,573 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-02-14 20:34:43,075 - INFO - MongoDB connection closed
+2026-02-14 20:34:45,820 - INFO - Connected to MongoDB at mongodb://user:pass1@localhost:27017/ db=ms_baseline
+2026-02-14 20:35:32,791 - INFO - MongoDB connection closed

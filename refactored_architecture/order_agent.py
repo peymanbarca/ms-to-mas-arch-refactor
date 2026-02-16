@@ -137,7 +137,7 @@ def price_cart(state):
         "promo_codes": [],
         "only_final_price": True
     }
-    r = requests.post(f"{PRICING_SERVICE_URL}/price", json=payload, timeout=10)
+    r = requests.post(f"{PRICING_SERVICE_URL}/price", json=payload, timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -152,7 +152,7 @@ def reserve_inventory(state):
         "delay": state['delay'],
         "drop": state['drop']
     }
-    r = requests.post(INVENTORY_SERVICE_RESERVE_URL, json=payload, timeout=10)
+    r = requests.post(INVENTORY_SERVICE_RESERVE_URL, json=payload, timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -167,7 +167,7 @@ def rollback_inventory(state):
         "delay": state['delay'],
         "drop": state['drop']
     }
-    requests.post(INVENTORY_SERVICE_RESERVE_ROLLBACK_URL, json=payload, timeout=10)
+    requests.post(INVENTORY_SERVICE_RESERVE_ROLLBACK_URL, json=payload, timeout=30)
 
 
 
@@ -175,7 +175,7 @@ def process_payment(state):
     """Process payment"""
     r = requests.post(PAYMENT_SERVICE_URL,
                       json={"order_id": state['order_id'], "final_price": state['final_price']},
-                      timeout=10)
+                      timeout=30)
     r.raise_for_status()
     return r.json()
 

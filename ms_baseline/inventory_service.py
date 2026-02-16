@@ -9,7 +9,7 @@ import requests
 import logging
 
 app = FastAPI()
-db_client = MongoClient("mongodb://user:pass1@localhost:27017/")
+db_client = MongoClient("mongodb://localhost:27017/")
 inventory_col = db_client["ms_baseline"]["inventory"]
 PROCUREMENT_SERVICE_URL = "http://127.0.0.1:8009/order_supplier"
 

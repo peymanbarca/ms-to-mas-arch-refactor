@@ -114,7 +114,8 @@ async def shipment_reasoning(state: ShipmentState) -> ShipmentState:
     - tracking_id must come from CARRIER_RESULT input
     - if both tracking_id exist, success in response should be true, otherwise it should be false.
     
-    Return just and ONLY valid JSON for final step in the following schema:
+    - Do not return middle steps and thinking procedure in response
+    - Return just and ONLY valid JSON for final step in the following schema:
 
     Schema:
     {{

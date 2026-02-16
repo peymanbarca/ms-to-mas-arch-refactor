@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://user:pass1@localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB = os.getenv("MONGO_DB", "ms_baseline")
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:8002")
 PORT = int(os.getenv("PORT", 8008))
@@ -92,6 +92,9 @@ async def search_products(q: str = Query(..., example="noise cancelling headphon
     # Call pricing service to get unit prices: we call /price endpoint with qty=1 items
     payload = {"items": [{"product_id": pid, "qty": 1} for pid in product_ids], "promo_codes": []}
     prices = {}
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_llm_calls = 0
     try:
         logger.info(f"Calling pricing_service, req: {payload}")
 
@@ -99,6 +102,9 @@ async def search_products(q: str = Query(..., example="noise cancelling headphon
         resp.raise_for_status()
         jr = resp.json()
         logger.info(f"Called pricing_service, req: {payload}, response: {jr}")
+        total_input_tokens += jr['total_input_tokens']
+        total_output_tokens += jr['total_output_tokens']
+        total_llm_calls += jr['total_llm_calls']
 
         for it in jr.get("items", []):
             prices[it["product_id"]] = it["unit_price"]
@@ -116,7 +122,7 @@ async def search_products(q: str = Query(..., example="noise cancelling headphon
         results.append(ProductSearchResultItem(sku=d["sku"], name=d["name"], description=d.get("description",""),
                                                price=price, score=float(score)))
     final_result = ProductSearchResponse(query=q, results=results,
-                                         total_input_tokens=0, total_output_tokens=0, total_llm_calls=0)
+                                         total_input_tokens=total_input_tokens, total_output_tokens=total_output_tokens, total_llm_calls=total_llm_calls)
     logger.info(f"Request for search_products successfully processed, query: {q}, result: {final_result}")
 
     return final_result

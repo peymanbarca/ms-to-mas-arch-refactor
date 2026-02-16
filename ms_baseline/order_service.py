@@ -9,7 +9,7 @@ import httpx
 import logging
 
 app = FastAPI()
-ORDER_COLL = MongoClient("mongodb://user:pass1@localhost:27017/")["ms_baseline"]["orders"]
+ORDER_COLL = MongoClient("mongodb://localhost:27017/")["ms_baseline"]["orders"]
 INVENTORY_SERVICE_RESERVE_URL = "http://127.0.0.1:8001/reserve"
 INVENTORY_SERVICE_RESERVE_ROLLBACK_URL = "http://127.0.0.1:8001/reserve-rollback"
 CART_SERVICE_URL = "http://127.0.0.1:8003/cart/"
@@ -75,6 +75,10 @@ async def checkout_cart(cart_id: str):
 
     trace_id = str(uuid.uuid4())
     logger.info(f"Request for checkout_cart, cart_id={cart_id},  trace_id={trace_id}")
+    
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_llm_calls = 0
 
     try:
         cart_resp = requests.get(CART_SERVICE_URL + f'{cart_id}', timeout=10)
@@ -96,9 +100,14 @@ async def checkout_cart(cart_id: str):
             price_resp.raise_for_status()
             j_resp: PriceResponse = price_resp.json()
             final_price = j_resp['total']
+            total_input_tokens += j_resp['total_input_tokens']
+            total_output_tokens += j_resp['total_output_tokens']
+            total_llm_calls += j_resp['total_llm_calls']
 
             return orchestrate_order(OrderCreate(items=cart_items, cart_id=cart_id, final_price=final_price,
-                                                 atomic_update=True, delay=0.0, drop=0), trace_id=trace_id)
+                                                 atomic_update=True, delay=0.0, drop=0), trace_id=trace_id,
+                                                 total_input_tokens=total_input_tokens, total_output_tokens=total_output_tokens,
+                                                 total_llm_calls=total_llm_calls)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -107,7 +116,7 @@ async def checkout_cart(cart_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def orchestrate_order(order: OrderCreate, trace_id: str):
+def orchestrate_order(order: OrderCreate, trace_id: str, total_input_tokens:int, total_output_tokens:int, total_llm_calls: int):
     order_id = str(uuid.uuid4())
     logger.info(f"Request for orchestrate_order started, order_id={order_id}, trace_id={trace_id}")
     start_time = time.time()
@@ -125,7 +134,7 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
                            "delay": order.delay,
                            "drop": order.drop}
         reserve_resp = requests.post(INVENTORY_SERVICE_RESERVE_URL, json=reserve_payload,
-                                     timeout=10)
+                                     timeout=30)
         logger.info(f"Inventory Reservation Service Called, req: {reserve_payload},"
                     f" response_status: {reserve_resp.status_code},"
                     f" response: {reserve_resp.json()}"
@@ -135,6 +144,10 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
                              f" res={reserve_resp.json()}, trace_id={trace_id}")
             raise HTTPException(status_code=500, detail="Inventory service error")
         reserve_result = reserve_resp.json()
+        total_input_tokens += reserve_result['total_input_tokens']
+        total_output_tokens += reserve_result['total_output_tokens']
+        total_llm_calls += reserve_result['total_llm_calls']
+        
         if reserve_result['status'] == 'OUT_OF_STOCK':
             order_final_status = "OUT_OF_STOCK"
             ORDER_COLL.update_one({"_id": order_id}, {"$set": {"status": order_final_status}})
@@ -143,15 +156,15 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
             logger.info(
                 f"Request for orchestrate_order completed, final_status:{order_final_status},  trace_id={trace_id}")
             return {"order_id": order_id, "status": order_final_status, "latency": latency,
-                    "total_input_tokens": 0,
-                    "total_output_tokens": 0,
-                    "total_llm_calls": 0}
+                    "total_input_tokens": total_input_tokens,
+                    "total_output_tokens": total_output_tokens,
+                    "total_llm_calls": total_llm_calls}
 
 
         try:
             payment_payload = {'order_id': order_id, 'final_price': order.final_price}
             payment_resp = requests.post(PAYMENT_SERVICE_URL,
-                                         json=payment_payload, timeout=10)
+                                         json=payment_payload, timeout=30)
             logger.info(f"Payment Service Called, req: {payment_payload},"
                         f" response_status: {payment_resp.status_code},"
                         f" response: {payment_resp.json()}"
@@ -161,6 +174,10 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
                                  f" res={payment_resp.json()}, trace_id={trace_id}")
                 raise HTTPException(status_code=500, detail="Payment service error")
             payment_result = payment_resp.json()
+            total_input_tokens += payment_result['total_input_tokens']
+            total_output_tokens += payment_result['total_output_tokens']
+            total_llm_calls += payment_result['total_llm_calls']
+
 
             # failed payment
             if payment_result['status'] != 'SUCCESS':
@@ -178,7 +195,7 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
                                                 "drop": order.drop}
                     reserve_rollback_resp = requests.post(INVENTORY_SERVICE_RESERVE_ROLLBACK_URL,
                                                           json=reserve_rollback_payload,
-                                                          timeout=10)
+                                                          timeout=30)
                     logger.info(f"Inventory Reservation Rollback Service Called, req: {reserve_rollback_payload},"
                                 f" response_status: {reserve_rollback_resp.status_code},"
                                 f" response: {reserve_rollback_resp.json()}"
@@ -196,9 +213,9 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
                 logger.info(
                     f"Request for orchestrate_order completed, final_status:{order_final_status},  trace_id={trace_id}")
                 return {"order_id": order_id, "status": order_final_status, "latency": latency,
-                        "total_input_tokens": 0,
-                        "total_output_tokens": 0,
-                        "total_llm_calls": 0
+                        "total_input_tokens": total_input_tokens,
+                        "total_output_tokens": total_output_tokens,
+                        "total_llm_calls": total_llm_calls
                         }
 
             # success payment
@@ -211,12 +228,20 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
                     shipment_payload = {'order_id': order_id, 'address': 'SAMPLE_ADDRESS'}
                     shipment_resp = requests.post(SHIPMENT_SERVICE_URL,
                                                   json=shipment_payload,
-                                                  timeout=10)
+                                                  timeout=30)
+                    shipment_result = shipment_resp.json()
+                    total_input_tokens += shipment_result['total_input_tokens']
+                    total_output_tokens += shipment_result['total_output_tokens']
+                    total_llm_calls += shipment_result['total_llm_calls']
                     logger.info(f"Shipment Service Called, req: {shipment_payload},"
                                 f" response_status: {shipment_resp.status_code},"
                                 f" response: {shipment_resp.json()}"
                                 f" trace_id={trace_id}")
                     if shipment_resp.status_code != 200:
+                        shipment_result = shipment_resp.json()
+                        total_input_tokens += shipment_result['total_input_tokens']
+                        total_output_tokens += shipment_result['total_output_tokens']
+                        total_llm_calls += shipment_result['total_llm_calls']
                         order_final_status = "SHIPMENT_FAILED"
                         ORDER_COLL.update_one({"_id": order_id}, {"$set": {"status": order_final_status}})
                         logger.exception(f"Error occurred in shipment booking, order_id={order_id},"
@@ -245,7 +270,7 @@ def orchestrate_order(order: OrderCreate, trace_id: str):
     latency = end_time - start_time
     logger.info(f"Request for orchestrate_order completed, final_status:{order_final_status},  trace_id={trace_id}")
     return {"order_id": order_id, "status": order_final_status, "latency": latency,
-            "total_input_tokens": 0,
-            "total_output_tokens": 0,
-            "total_llm_calls": 0
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "total_llm_calls": total_llm_calls
             }

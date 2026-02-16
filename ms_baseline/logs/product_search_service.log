@@ -50,3 +50,11 @@
 2026-02-14 17:54:29,326 - INFO - Called pricing_service, req: {'items': [{'product_id': 'b2926dc2-cc6d-4c3e-ae40-7a127c173b16', 'qty': 1}], 'promo_codes': []}, response: {'items': [{'product_id': 'b2926dc2-cc6d-4c3e-ae40-7a127c173b16', 'qty': 1, 'unit_price': 200.0, 'line_total': 200.0, 'discounts': 0.0}], 'subtotal': 200.0, 'total_discount': 0.0, 'total': 200.0, 'currency': 'USD'}
 2026-02-14 17:54:29,326 - INFO - Request for search_products successfully processed, query: looking for headphone with noise cancelling, result: query='looking for headphone with noise cancelling' results=[ProductSearchResultItem(sku='b2926dc2-cc6d-4c3e-ae40-7a127c173b16', name='Airpod', description='Noise cancelling headphone Airpod', price=200.0, score=1.875)]
 2026-02-14 19:53:41,243 - INFO - ProductSearch connected to mongo mongodb://user:pass1@localhost:27017/
+2026-02-14 20:31:48,232 - INFO - ProductSearch connected to mongo mongodb://user:pass1@localhost:27017/
+2026-02-14 20:32:21,050 - INFO - ProductSearch connected to mongo mongodb://user:pass1@localhost:27017/
+2026-02-14 20:32:36,641 - INFO - ProductSearch connected to mongo mongodb://user:pass1@localhost:27017/
+2026-02-14 20:33:12,531 - INFO - ProductSearch connected to mongo mongodb://user:pass1@localhost:27017/
+2026-02-14 20:34:45,924 - INFO - ProductSearch connected to mongo mongodb://localhost:27017/
+2026-02-14 20:35:35,465 - INFO - ProductSearch connected to mongo mongodb://localhost:27017/
+2026-02-14 20:36:05,720 - INFO - ProductSearch connected to mongo mongodb://localhost:27017/
+2026-02-14 20:36:31,498 - INFO - ProductSearch connected to mongo mongodb://localhost:27017/
