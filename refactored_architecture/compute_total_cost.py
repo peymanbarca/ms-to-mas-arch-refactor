@@ -1,24 +1,24 @@
 import math
 
-c_obs_per_kb = math.pow(10, -4)
+c_obs_per_mb = 2 * math.pow(10, -5)
 
-lat_p95_baseline = 1.642
+lat_p95_baseline = 2.665
 
-c_obs_per_req_baseline = 4.4 * c_obs_per_kb
+c_obs_per_req_baseline = 37.5 * c_obs_per_mb
 
 # inputs
-lat_p95 = 3.278
-n_llm_token = 107.6 * 1000
-c_obs_per_req = 10.4 * c_obs_per_kb
+lat_p95 = 5.126
+n_llm_token = 7.25 * math.pow(10, 6)
+c_obs_per_req = 97.5 * c_obs_per_mb
 
 
-c_infra = math.pow(10, -4)
+c_infra = 0  # math.pow(10, -4)
 c_llm_token = math.pow(10, -7)
-R = 100
+
 delta_q_lat_p95 = lat_p95 - lat_p95_baseline
-delta_c = delta_q_lat_p95 * c_infra + (c_obs_per_req - c_obs_per_req_baseline + c_llm_token * n_llm_token) * R
+delta_c = (c_obs_per_req - c_obs_per_req_baseline + c_llm_token * n_llm_token)
 
 print(f'delta_q_lat_p95 = {delta_q_lat_p95} , delta_c = {delta_c},  '
-      f' Infra term: {100 * delta_q_lat_p95 * c_infra / delta_c} , '
-      f' LLM term: {c_llm_token * n_llm_token * 100 * R / delta_c}'
-      f' Obs term: {(c_obs_per_req - c_obs_per_req_baseline) * 100 * R / delta_c} ')
+      f' \nInfra term: {100 * delta_q_lat_p95 * c_infra / delta_c} , '
+      f' \nLLM term: {c_llm_token * n_llm_token * 100 / delta_c}'
+      f' \nObs term: {(c_obs_per_req - c_obs_per_req_baseline) * 100 / delta_c} ')
