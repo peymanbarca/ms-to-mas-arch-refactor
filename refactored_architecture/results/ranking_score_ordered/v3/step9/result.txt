@@ -1,0 +1,6 @@
+Delta
+latency: 4.334
+consistency: 2
+failure_rate: 2
+llm_tokens: 7.94M
+log: 6.05
