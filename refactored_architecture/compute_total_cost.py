@@ -7,8 +7,8 @@ lat_p95_baseline = 2.665
 c_obs_per_req_baseline = 37.5 * c_obs_per_mb
 
 # inputs
-lat_p95 = lat_p95_baseline + 2.178
-n_llm_token = 8.05 * math.pow(10, 6)
+lat_p95 = lat_p95_baseline + 2.799
+n_llm_token = 7.89 * math.pow(10, 6)
 c_obs_per_req = (37.5 + 6.05 + 0.24 + 0.21) * c_obs_per_mb
 
 
