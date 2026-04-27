@@ -62,7 +62,7 @@ service_to_agent = {
 # initial architecture
 migration_order_strategy = "Ranked" # ["Ranked", "Reverse-Ranked", "Random", "Dependency-Based", "Complexity-Based"]
 if migration_order_strategy == "Ranked":
-    current_services = ranked_services.copy()
+    current_services = ranked_services.copy() # todo: impl dynamic ranking with TProp
 elif migration_order_strategy == "Reverse-Ranked":
     current_services = reverse_ranked_services.copy()
 elif migration_order_strategy == "Random":
@@ -78,8 +78,8 @@ else:
 
 acceptance_predicate_mode = "Full" # ["QA-Only", "Latency-Only", "Failure-Only", "Full"]
 
-# --------------------------------- Governance Mechanism HILT ---------------------------
-# todo
+# --------------------------------- Governance Mechanism HITL ---------------------------
+HITL_policy = "Post-Audit-Only" # ["No", "Post-Audit-Only", "Full"]
 
 
 current_agents = []
@@ -148,7 +148,7 @@ def run_experiment_for_step(migration_order, step_num, predicate_mode, services,
         epsilon_l = -1
         epsilon_qa = -1
 
-    result = subprocess.run(
+    step_result = subprocess.run(
         ["python3", "exp_runner_auto.py",
          migration_order,
          predicate_mode, str(step_num), ",".join(services), ",".join(agents),
@@ -158,8 +158,23 @@ def run_experiment_for_step(migration_order, step_num, predicate_mode, services,
         capture_output=True,
         text=True
     )
-    print("Experiment output:", result)
-    return "ACCEPTED" in result.stdout
+    step_result_parsed = json.loads(step_result.stdout.strip())
+    print(f"Experiment output for step {step_num}:", step_result_parsed)
+
+    # Automated acceptance decision based on predicate results
+    if HITL_policy == "No":
+        return True if step_result_parsed["result"] == "ACCEPTED" else False
+    else:
+        print("Please decide whether to ACCEPT or REJECT this refactoring step based on the above results and HITL policy.")
+        governed_step_result = input("Type 'A' to Accept or 'R' to Reject: ").strip().upper()
+        if governed_step_result == "A":
+            return True
+        elif governed_step_result == "R":
+            return False
+        else:
+            print("Invalid input. Defaulting to REJECT.")
+            return False
+
 
 
 
@@ -182,7 +197,7 @@ for svc in ranked_services:
     # optional: wait for services to stabilize
     time.sleep(10)
 
-    input("Press Enter to run the experiment for this configuration...")
+    # input("Press Enter to run the experiment for this configuration...")
 
     automatic_acceptance_result = run_experiment_for_step(migration_order_strategy, step, acceptance_predicate_mode,
                                                  candidate_services, candidate_agents)

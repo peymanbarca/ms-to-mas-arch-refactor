@@ -259,6 +259,7 @@ def run_experiment_of_architecture_step_full_predicate():
 
 
 def acceptance_of_architecture_step_predicate_based(epsilon_l, epsilon_qa, epsilon_f):
+    latency_predicate_failed = None; qa_predicate_failed = None; failure_rate_predicate_failed = None
     # p95_latency, qa_inconsistency_rate, failure_rate = run_experiment_of_architecture_step_full_predicate()
     # # check with baseline w.s.t thresholds:
     # if epsilon_l and epsilon_l > -1:
@@ -267,18 +268,21 @@ def acceptance_of_architecture_step_predicate_based(epsilon_l, epsilon_qa, epsil
     #         latency_predicate_failed = True
     #     else:
     #         success = True
+    #         latency_predicate_failed = False
     # if epsilon_qa and epsilon_qa > -1:
     #     if qa_inconsistency_rate > epsilon_qa:
     #         success =  False
     #         qa_predicate_failed = True
     #     else:
     #         success = True
+    #         qa_predicate_failed = False
     # if epsilon_f and epsilon_f > -1:
     #     if failure_rate > epsilon_f:
     #         success = False
     #         failure_rate_predicate_failed = True
     #     else:
     #         success = True
+    #         failure_rate_predicate_failed = False
     # success = False
 
     p95_latency, qa_inconsistency_rate, failure_rate = 1.1, 0.1, 0.01  # dummy values for testing
@@ -287,6 +291,9 @@ def acceptance_of_architecture_step_predicate_based(epsilon_l, epsilon_qa, epsil
 
 
     result = {
+        "epsilon_l": epsilon_l,
+        "epsilon_qa": epsilon_qa,
+        "epsilon_f": epsilon_f,
         "p95_latency": p95_latency,
         "qa_inconsistency_rate": qa_inconsistency_rate,
         "failure_rate": failure_rate,
@@ -318,15 +325,15 @@ if __name__ == '__main__':
                              "step": step, "services": services, "agents": agents, "acceptance_result": acceptance_result}
     step_report_file_name = f"results/refactored_arch_results_llm_{LLM}_T_{T}_U_{CONCURRENCY_RATE}" \
               f"_migration_order_{migration_order}_acceptance_predicate_mode_{acceptance_predicate_mode}_step_{step}.json"
-    print(step_report_file_name, full_run_step_results)
+    # print(step_report_file_name, full_run_step_results)
     with open(step_report_file_name, "w") as f:
         f.write("\n\n")
         json.dump(full_run_step_results, f, indent=2)
         f.write("\n\n")
 
     if acceptance_result["success"]:
-        print("ACCEPTED")
+        print(json.dumps({"result": "ACCEPTED", "details": acceptance_result}))
     else:
-        print("REJECTED")
+        print(json.dumps({"result": "REJECTED", "details": acceptance_result}))
 
 
